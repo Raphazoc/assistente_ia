@@ -7,9 +7,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import main
-import memoria
-import resumos
+from app import main
+from app import memoria
+from app import resumos
 
 
 class MemoriaLongoPrazoTests(unittest.TestCase):

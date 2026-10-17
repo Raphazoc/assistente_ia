@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import resumos
+from app import resumos
 
 
 class ResumosConversaTests(unittest.TestCase):

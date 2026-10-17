@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import aplicativo
-import internet
+from app import aplicativo
+from app import internet
 
 
 class AplicativoTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class AplicativoTests(unittest.TestCase):
             patch.object(aplicativo.resumos, "resumir_pendentes"),
             patch.object(aplicativo.main, "indexar_memorias_antigas"),
             patch.object(aplicativo.MotorDesktop, "_responder", side_effect=responder),
-            patch("voz.ouvir", side_effect=["Primeira frase", "Segunda frase"]) as ouvir,
+            patch("app.voz.ouvir", side_effect=["Primeira frase", "Segunda frase"]) as ouvir,
         ):
             motor.ativar_microfone()
             motor.iniciar()

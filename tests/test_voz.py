@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-import main
-import memoria
-import voz
+from app import main
+from app import memoria
+from app import voz
 
 
 class GravadorFraseTests(unittest.TestCase):

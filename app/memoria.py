@@ -7,8 +7,8 @@ import re
 import sqlite3
 import unicodedata
 
-import resumos
-import diagnostico
+from . import resumos
+from . import diagnostico
 
 
 STOPWORDS = set("a o as os um uma uns umas de da do das dos em no na nos nas para por com e ou que se eu meu minha meus minhas voce voces seu sua seus suas qual quais como quando onde pode poderia favor sobre foi era ser esta estou tem tenho lembra lembrar conversamos conversa conversas anteriormente passado passadas salvo salvas guardou diga fale saber".split())
@@ -504,7 +504,7 @@ def tratar_comando(conexao, texto):
 
 def gerenciar(conexao, ler_texto):
     """Apresenta o menu interativo de consulta e manutenção da memória."""
-    from controles import SolicitarMenu
+    from .controles import SolicitarMenu
 
     while True:
         assunto, projeto = contexto_ativo(conexao)

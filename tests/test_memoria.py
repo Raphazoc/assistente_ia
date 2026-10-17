@@ -8,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import main
+from app import main
 
 
 class MemoriaPersistenteTests(unittest.TestCase):

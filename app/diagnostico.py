@@ -9,7 +9,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
-PASTA_LOGS = Path(__file__).resolve().parent / "logs"
+PASTA_LOGS = Path(__file__).resolve().parent.parent / "logs"
 _logger = None
 _trava = threading.RLock()
 EVENTOS = {

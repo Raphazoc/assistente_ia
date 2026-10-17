@@ -9,9 +9,9 @@ from unittest.mock import Mock, patch
 
 import httpcore
 
-import internet
-import main
-from controles import SolicitarMenu
+from app import internet
+from app import main
+from app.controles import SolicitarMenu
 
 
 class InternetTests(unittest.TestCase):
@@ -267,7 +267,7 @@ class InternetTests(unittest.TestCase):
                 self.subTest(resposta=resposta),
                 patch.object(main,"reconhecer_voz",return_value=resposta),
                 patch.object(main,"carregar_configuracao",return_value={"palavra_ativacao":"Aurora"}),
-                patch("fala.falar"), contextlib.redirect_stdout(io.StringIO()),
+                patch("app.fala.falar"), contextlib.redirect_stdout(io.StringIO()),
             ):
                 self.assertEqual(main.autorizar_pesquisa(self.plano,modo_voz=True), esperado)
 

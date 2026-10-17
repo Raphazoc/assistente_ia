@@ -5,9 +5,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import controles
-import main
-import memoria
+from app import controles
+from app import main
+from app import memoria
 
 
 class MenuTests(unittest.TestCase):

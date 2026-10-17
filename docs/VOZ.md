@@ -8,7 +8,7 @@ modelo de conversa continuam usando a configuração do projeto.
 Para ouvir uma demonstração no dispositivo de áudio padrão do Windows:
 
 ```powershell
-.\.venv\Scripts\python.exe fala.py
+.\.venv\Scripts\python.exe -m app.fala
 ```
 
 As dependências de voz já foram instaladas neste ambiente. Para reinstalar:
@@ -17,7 +17,7 @@ As dependências de voz já foram instaladas neste ambiente. Para reinstalar:
 .\.venv\Scripts\python.exe -m pip install -r requirements-voz.txt
 ```
 
-Em `fala.py`, ajuste `VOZ_ONLINE` para mudar a voz, por exemplo para
+Em `app/fala.py`, ajuste `VOZ_ONLINE` para mudar a voz, por exemplo para
 `pt-BR-FranciscaNeural` (feminina), ou `VELOCIDADE_ONLINE` para mudar o ritmo.
 O valor `+0%` usa a velocidade original, e `+3%` deixa a fala um pouco mais ágil.
 
@@ -29,7 +29,7 @@ responder de forma mais breve e conversada.
 Se a conexão falhar, o programa usa o modelo Piper já existente e tenta
 o serviço online novamente após um minuto. Se parte da resposta já tiver
 sido falada, a alternativa local recebe somente os trechos restantes.
-Para usar apenas a voz local, defina `USAR_VOZ_ONLINE = False` em `fala.py`.
+Para usar apenas a voz local, defina `USAR_VOZ_ONLINE = False` em `app/fala.py`.
 
 ## Microfone e troca de modo
 
@@ -50,7 +50,7 @@ silêncio** depois da fala, em vez de esperar seis segundos fixos.
 Pausas mais curtas permitem continuar a mesma frase. Isso detecta uma pausa
 na voz; não analisa se a frase está gramaticalmente completa.
 
-Para dar mais tempo entre palavras, aumente `SILENCIO_FINAL` em `voz.py`
+Para dar mais tempo entre palavras, aumente `SILENCIO_FINAL` em `app/voz.py`
 (por exemplo, `1.5`). Para respostas mais rápidas, diminua com cuidado,
 pois uma pausa natural pode encerrar a gravação. O limite de uma fala
 contínua é de 30 segundos, e silêncio sem fala não é enviado ao Whisper.
@@ -72,7 +72,7 @@ funcionando. O nome sozinho não envia um pedido. Sem a exigência do nome,
 outras falas próximas ao microfone também podem ser capturadas.
 
 O nome é usado para interromper uma resposta enquanto a IA está falando.
-Altere-o pelo menu **Esc → 3**. A escolha fica salva em `config_voz.json`
+Altere-o pelo menu **Esc → 3**. A escolha fica salva em `resources/config_voz.json`
 e permanece após reiniciar. Você pode escolher de uma a quatro palavras,
 com até 40 letras. Prefira um nome distinto de palavras comuns no ambiente.
 
@@ -94,7 +94,7 @@ baixa confiança. O monitor também ignora trechos que repetem a própria
 resposta. Esses cuidados reduzem ativações falsas; não garantem eliminá-las.
 O filtro não é um cancelador acústico de eco: **use fones** para melhorar a
 interrupção por voz quando as caixas de som chegam ao microfone.
-Em `config_voz.json`, `interromper_por_voz: false` desativa a escuta durante
+Em `resources/config_voz.json`, `interromper_por_voz: false` desativa a escuta durante
 a reprodução; Espaço e Esc continuam disponíveis.
 
 Os modelos de reconhecimento são preparados em segundo plano. A GPU é usada

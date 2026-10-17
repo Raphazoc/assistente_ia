@@ -31,7 +31,7 @@ autorização e respeitando os filtros.
 - **Recusar:** Enter, `não`, silêncio ou resposta ambígua não liberam a pesquisa.
 - **Cancelar:** Esc durante a confirmação cancela e abre o menu.
 - **Desativar:** **Esc → 5** alterna a pesquisa; a escolha é salva em
-  `config_internet.json`. Reativar não dispensa futuras autorizações.
+  `resources/config_internet.json`. Reativar não dispensa futuras autorizações.
 
 No aplicativo Windows, use **Pesquisa: ligada/desligada** no topo da janela.
 A escolha é salva nas configurações do aplicativo e vale nas próximas aberturas.
@@ -92,4 +92,4 @@ importação automática das páginas como fatos pessoais do usuário.
 
 A voz online existente também usa a internet para sintetizar as respostas,
 conforme [VOZ.md](VOZ.md). A confirmação descrita aqui controla as pesquisas;
-a configuração da síntese de voz continua em `fala.py`.
+a configuração da síntese de voz continua em `app/fala.py`.

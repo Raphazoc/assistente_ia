@@ -9,8 +9,8 @@ from functools import lru_cache
 
 import numpy as np
 import sounddevice as sd
-from controles import SolicitarMenu
-import diagnostico
+from .controles import SolicitarMenu
+from . import diagnostico
 
 
 TAXA_AMOSTRAGEM = 16000
@@ -249,7 +249,7 @@ def transcrever_audio(audio, modo_interrupcao=False):
     """Transcreve um vetor de áudio usando o modelo Whisper carregado."""
     dicas = {}
     if modo_interrupcao:
-        from ativacao import carregar_configuracao
+        from .ativacao import carregar_configuracao
         palavra = carregar_configuracao()["palavra_ativacao"]
         dicas = {
             "hotwords": palavra,

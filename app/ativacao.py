@@ -4,11 +4,11 @@ import threading
 import unicodedata
 from pathlib import Path
 
-from controles import InterromperFala, SolicitarMenu, tecla_durante_fala
-import diagnostico
+from .controles import InterromperFala, SolicitarMenu, tecla_durante_fala
+from . import diagnostico
 
 
-CONFIGURACAO = Path(__file__).resolve().parent / "config_voz.json"
+CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_voz.json"
 PADRAO = {"palavra_ativacao": "Aurora", "interromper_por_voz": True}
 COMANDOS_DIRETOS = {
     "menu", "sair", "encerrar", "desligar assistente", "texto", "modo texto",
@@ -91,7 +91,7 @@ class MonitorInterrupcao:
             self.thread.join(timeout=0.2)
 
     def _escutar(self):
-        from voz import capturar_audio, transcrever_audio
+        from .voz import capturar_audio, transcrever_audio
 
         try:
             while not self.finalizar.is_set():

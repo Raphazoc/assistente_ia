@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import acoes
-import internet
-import main
+from app import acoes
+from app import internet
+from app import main
 
 
 class AcoesTests(unittest.TestCase):
@@ -95,7 +95,7 @@ class AcoesTests(unittest.TestCase):
         plano = acoes.PlanoAcao("abrir_programa", "calculadora")
         with (
             patch.object(main, "reconhecer_voz", side_effect=["confirmo qualquer coisa", "Confirmo!"]),
-            patch("fala.falar"),
+            patch("app.fala.falar"),
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.assertFalse(main.autorizar_acao(plano, modo_voz=True))

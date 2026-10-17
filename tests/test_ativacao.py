@@ -11,12 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-import ativacao
-import fala
-import main
-import memoria
-import voz
-from controles import InterromperFala, SolicitarMenu
+from app import ativacao
+from app import fala
+from app import main
+from app import memoria
+from app import voz
+from app.controles import InterromperFala, SolicitarMenu
 
 
 class AtivacaoTests(unittest.TestCase):

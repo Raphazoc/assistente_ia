@@ -18,7 +18,7 @@ import certifi
 import httpcore
 
 
-CONFIGURACAO = Path(__file__).resolve().parent / "config_internet.json"
+CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_internet.json"
 MAX_CONSULTAS = 2
 MAX_RESULTADOS = 5
 MAX_PAGINAS = 3

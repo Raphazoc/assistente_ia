@@ -56,15 +56,15 @@ integridade da cópia antes de publicá-la.
 Para listar ou criar um backup manual:
 
 ```powershell
-.\.venv\Scripts\python.exe banco.py listar
-.\.venv\Scripts\python.exe banco.py backup
+.\.venv\Scripts\python.exe -m app.banco listar
+.\.venv\Scripts\python.exe -m app.banco backup
 ```
 
 Para restaurar, **feche o assistente** e use exatamente um nome exibido
 pelo comando `listar`:
 
 ```powershell
-.\.venv\Scripts\python.exe banco.py restaurar manual_20261016T120000Z_1234abcd.db
+.\.venv\Scripts\python.exe -m app.banco restaurar manual_20261016T120000Z_1234abcd.db
 ```
 
 O nome acima é apenas um exemplo. A restauração verifica a integridade e

@@ -1,5 +1,10 @@
 # Assistente Pessoal Local com IA
 
+> **Status: Beta em testes.** A vers?o atual ? identificada como `v0.1b`,
+> em que o `b` significa **Beta**. O projeto ainda est? em valida??o e pode
+> apresentar comportamentos inesperados, altera??es de funcionalidade ou
+> incompatibilidades antes de uma vers?o est?vel.
+
 > **Status: Beta em testes.** A versão atual é identificada como `v0.1b`,
 > em que o `b` significa **Beta**. O projeto ainda está em validação e pode
 > apresentar comportamentos inesperados, alterações de funcionalidade ou
@@ -18,7 +23,7 @@ fala e recuperação de informação.
 Há duas formas de uso:
 
 - **Terminal**, executada por `main.py`, com menu para texto e voz.
-- **Aplicativo desktop para Windows**, executado por `aplicativo.py` ou pelo
+- **Aplicativo desktop para Windows**, executado por `app/aplicativo.py` ou pelo
   instalador gerado em `dist-installer/`.
 
 ## Visão geral
@@ -51,17 +56,17 @@ O fluxo principal está concentrado em `main.py`, que coordena os módulos:
 | Módulo | Responsabilidade |
 | --- | --- |
 | `main.py` | Inicialização, ciclo de conversa, Ollama e integração dos recursos |
-| `aplicativo.py` | Interface desktop Windows e processamento fora da thread da interface |
-| `memoria.py` | Fatos persistentes, escopos, busca e gerenciamento da memória |
-| `resumos.py` | Resumos de conversas antigas e recuperação histórica |
-| `banco.py` | Backups, integridade e restauração do SQLite |
-| `internet.py` | Planejamento, busca, leitura e filtragem de fontes |
-| `acoes.py` | Planejamento, confirmação, validação e execução de ações locais |
-| `voz.py` | Captura e transcrição de áudio com Faster-Whisper |
-| `fala.py` | Síntese de fala online e local |
-| `ativacao.py` | Palavra de ativação e interrupção durante a fala |
-| `controles.py` | Entrada de teclado e controles de interação |
-| `diagnostico.py` | Eventos técnicos e logs rotativos |
+| `app/aplicativo.py` | Interface desktop Windows e processamento fora da thread da interface |
+| `app/memoria.py` | Fatos persistentes, escopos, busca e gerenciamento da memória |
+| `app/resumos.py` | Resumos de conversas antigas e recuperação histórica |
+| `app/banco.py` | Backups, integridade e restauração do SQLite |
+| `app/internet.py` | Planejamento, busca, leitura e filtragem de fontes |
+| `app/acoes.py` | Planejamento, confirmação, validação e execução de ações locais |
+| `app/voz.py` | Captura e transcrição de áudio com Faster-Whisper |
+| `app/fala.py` | Síntese de fala online e local |
+| `app/ativacao.py` | Palavra de ativação e interrupção durante a fala |
+| `app/controles.py` | Entrada de teclado e controles de interação |
+| `app/diagnostico.py` | Eventos técnicos e logs rotativos |
 
 ### Modelos padrão
 
@@ -251,7 +256,7 @@ Durante a fala:
   encaminha o novo pedido.
 
 A palavra de ativação padrão é `Aurora`. Ela pode ser alterada pela opção `3`
-do menu. O valor é salvo em `config_voz.json`.
+do menu. O valor é salvo em `resources/config_voz.json`.
 
 ### Comandos rápidos
 
@@ -300,7 +305,7 @@ o histórico como instrução ativa.
 
 ## Pesquisa na internet
 
-A pesquisa é controlada por `config_internet.json`. Neste repositório, o
+A pesquisa é controlada por `resources/config_internet.json`. Neste repositório, o
 arquivo inicial está habilitado:
 
 ```json
@@ -351,26 +356,26 @@ tratadas automaticamente como autorização para executá-la.
 
 A fala usa uma estratégia de fallback:
 
-1. Tenta a voz neural online configurada em `fala.py`.
+1. Tenta a voz neural online configurada em `app/fala.py`.
 2. Se o serviço online falhar, usa a voz local Piper.
 
 O modelo local esperado é:
 
 ```text
-vozes/pt_BR-faber-medium.onnx
-vozes/pt_BR-faber-medium.onnx.json
+resources/vozes/pt_BR-faber-medium.onnx
+resources/vozes/pt_BR-faber-medium.onnx.json
 ```
 
 Para testar a transcrição de voz isoladamente:
 
 ```powershell
-python voz.py
+python -m app.voz
 ```
 
 Para testar a síntese de fala:
 
 ```powershell
-python fala.py
+python -m app.fala
 ```
 
 O modo de voz pode precisar de permissões do sistema operacional, drivers de
@@ -380,24 +385,24 @@ não impede o uso do modo texto.
 ## Backups e restauração
 
 O assistente cria backups automáticos do SQLite em `backups/`, mantendo as
-últimas cópias automáticas conforme a política do módulo `banco.py`.
+últimas cópias automáticas conforme a política do módulo `app/banco.py`.
 
 Listar backups:
 
 ```powershell
-python banco.py listar
+python -m app.banco listar
 ```
 
 Criar backup manual:
 
 ```powershell
-python banco.py backup
+python -m app.banco backup
 ```
 
 Restaurar um backup listado:
 
 ```powershell
-python banco.py restaurar NOME_DO_BACKUP.db
+python -m app.banco restaurar NOME_DO_BACKUP.db
 ```
 
 Antes de restaurar:
@@ -449,31 +454,35 @@ python -m pytest tests/test_memoria.py
 python -m pytest tests/test_internet.py
 ```
 
-## Estrutura do repositório
+## Estrutura do reposit?rio
 
 ```text
 .
-├── main.py                 # Entrada e ciclo principal
-├── aplicativo.py           # Interface desktop Windows
-├── memoria.py              # Memória e recuperação
-├── resumos.py              # Resumos persistentes
-├── internet.py             # Pesquisa autorizada
-├── acoes.py                # Ações locais confirmadas
-├── banco.py                # Backup e restauração
-├── voz.py                  # Reconhecimento de fala
-├── fala.py                 # Síntese de fala
-├── ativacao.py             # Palavra de ativação
-├── controles.py            # Teclado e exceções de controle
-├── diagnostico.py          # Logs técnicos
-├── config_voz.json         # Preferências de ativação
-├── config_internet.json    # Ativação da pesquisa
-├── docs/                   # Documentação detalhada dos subsistemas
-├── vozes/                  # Modelo local de voz
-├── tests/                  # Testes automatizados
-├── installer/              # Script de empacotamento Windows
-├── INSTALACAO.md           # Empacotamento e instalação do aplicativo
-├── requirements.txt        # Dependências gerais
-└── requirements-voz.txt    # Dependências de áudio e voz
+??? app/                    # C?digo principal da assistente
+?   ??? main.py             # Ciclo principal e integra??o dos recursos
+?   ??? aplicativo.py       # Interface desktop Windows
+?   ??? acoes.py            # A??es locais confirmadas
+?   ??? memoria.py          # Mem?ria e recupera??o
+?   ??? resumos.py          # Resumos persistentes
+?   ??? internet.py         # Pesquisa autorizada
+?   ??? banco.py            # Backup e restaura??o
+?   ??? voz.py              # Reconhecimento de fala
+?   ??? fala.py             # S?ntese de fala
+?   ??? ativacao.py         # Palavra de ativa??o
+?   ??? controles.py        # Teclado e controles
+?   ??? diagnostico.py      # Logs t?cnicos
+??? resources/              # Configura??es e modelos distribu?dos
+?   ??? config_voz.json
+?   ??? config_internet.json
+?   ??? vozes/
+??? legacy/                 # Vers?es antigas mantidas para refer?ncia
+??? docs/                   # Documenta??o dos subsistemas
+??? tests/                  # Testes automatizados
+??? installer/              # Script de empacotamento Windows
+??? AssistenteIA.spec       # Configura??o do PyInstaller
+??? INSTALACAO.md           # Empacotamento e instala??o
+??? requirements.txt        # Depend?ncias gerais
+??? requirements-voz.txt    # Depend?ncias de ?udio e voz
 ```
 
 ## Privacidade e segurança
@@ -490,7 +499,7 @@ distintos:
 - O banco e os logs são ignorados pelo Git.
 - O conteúdo recuperado da internet não é tratado como instrução confiável.
 
-Revise `fala.py`, `internet.py` e as configurações locais antes de usar o
+Revise `app/fala.py`, `app/internet.py` e as configurações locais antes de usar o
 projeto em um ambiente com requisitos específicos de privacidade.
 
 ## Limitações conhecidas
@@ -546,7 +555,7 @@ Entre os componentes que devem ser verificados separadamente estão:
 
 - Ollama e os modelos `qwen3:8b` e `qwen3-embedding:0.6b`;
 - Faster-Whisper e seus modelos de reconhecimento;
-- Piper e o modelo `vozes/pt_BR-faber-medium.onnx`;
+- Piper e o modelo `resources/vozes/pt_BR-faber-medium.onnx`;
 - Edge-TTS e o serviço online de síntese de voz;
 - Bibliotecas instaladas por `requirements.txt` e `requirements-voz.txt`;
 - Serviços externos acessados pelo recurso opcional de pesquisa.

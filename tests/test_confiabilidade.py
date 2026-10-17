@@ -11,11 +11,11 @@ from unittest.mock import Mock, patch
 import httpx
 from ollama import ResponseError
 
-import banco
-import diagnostico
-import main
-import memoria
-import voz
+from app import banco
+from app import diagnostico
+from app import main
+from app import memoria
+from app import voz
 
 
 class ConfiabilidadeTests(unittest.TestCase):
@@ -142,7 +142,7 @@ class ConfiabilidadeTests(unittest.TestCase):
 
     def test_falha_total_da_voz_nao_impede_a_resposta_escrita(self):
         with (
-            patch("fala.falar", side_effect=OSError("trecho privado")),
+            patch("app.fala.falar", side_effect=OSError("trecho privado")),
             patch.object(main, "MonitorInterrupcao"),
             contextlib.redirect_stdout(io.StringIO()) as saida,
         ):

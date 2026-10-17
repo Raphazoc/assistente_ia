@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-import diagnostico
+from . import diagnostico
 
 
 INTERVALO_BACKUP = timedelta(hours=24)
@@ -131,7 +131,7 @@ def main():
     argumentos.add_argument("acao", choices=("listar", "backup", "restaurar"))
     argumentos.add_argument("nome", nargs="?", help="Nome retornado por 'listar'")
     opcoes = argumentos.parse_args()
-    caminho = Path(__file__).resolve().parent / "memoria.db"
+    caminho = Path(__file__).resolve().parent.parent / "memoria.db"
     if opcoes.acao == "listar":
         copias = listar_backups(caminho)
         print("\n".join(p.name for p in copias) if copias else "Nenhum backup disponível.")

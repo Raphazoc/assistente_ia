@@ -9,12 +9,12 @@ from pathlib import Path
 
 import emoji
 import sounddevice as sd
-from controles import InterromperFala, SolicitarMenu, tecla_durante_fala
-import diagnostico
+from .controles import InterromperFala, SolicitarMenu, tecla_durante_fala
+from . import diagnostico
 
 
-PASTA_PROJETO = Path(__file__).resolve().parent
-MODELO_VOZ = PASTA_PROJETO / "vozes" / "pt_BR-faber-medium.onnx"
+PASTA_PROJETO = Path(__file__).resolve().parent.parent
+MODELO_VOZ = PASTA_PROJETO / "resources" / "vozes" / "pt_BR-faber-medium.onnx"
 
 # A voz principal envia o texto a ser falado ao serviço online da Microsoft.
 # Para uma voz feminina, use "pt-BR-FranciscaNeural".

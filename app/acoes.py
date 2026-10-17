@@ -8,7 +8,7 @@ import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
 
-import internet
+from . import internet
 
 
 TIPOS = (

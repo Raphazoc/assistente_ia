@@ -7,10 +7,10 @@ from PyInstaller.utils.hooks import collect_all
 
 raiz = Path.cwd()
 dados = [
-    (str(raiz / "vozes" / "pt_BR-faber-medium.onnx"), "vozes"),
-    (str(raiz / "vozes" / "pt_BR-faber-medium.onnx.json"), "vozes"),
-    (str(raiz / "config_voz.json"), "."),
-    (str(raiz / "config_internet.json"), "."),
+    (str(raiz / "resources" / "vozes" / "pt_BR-faber-medium.onnx"), "resources/vozes"),
+    (str(raiz / "resources" / "vozes" / "pt_BR-faber-medium.onnx.json"), "resources/vozes"),
+    (str(raiz / "resources" / "config_voz.json"), "resources"),
+    (str(raiz / "resources" / "config_internet.json"), "resources"),
 ]
 binarios = []
 ocultos = []

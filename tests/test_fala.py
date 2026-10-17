@@ -5,8 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-import fala
-import main
+from app import fala
+from app import main
 
 
 class FalaTests(unittest.TestCase):
