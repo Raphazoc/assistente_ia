@@ -186,6 +186,19 @@ Também é possível abrir o menu digitando `menu` ou pressionando `Esc`.
 
 ### Aplicativo desktop para Windows
 
+#### Download
+
+Baixe a versão mais recente do instalador para Windows:
+
+[**Baixar AssistenteIA para Windows**](https://github.com/Raphazoc/assistente_ia/releases/latest/download/AssistenteIA-Setup.exe)
+
+O instalador inclui o aplicativo, o Python, as dependências e o modelo local
+de voz Piper. O Ollama e os modelos de linguagem continuam sendo instalados
+separadamente. Se o link acima ainda não estiver disponível, use a página de
+[releases do projeto](https://github.com/Raphazoc/assistente_ia/releases).
+
+#### Gerar o instalador
+
 Para criar o aplicativo empacotado e, opcionalmente, o instalador:
 
 ```powershell
@@ -205,6 +218,12 @@ O aplicativo desktop mantém os dados do usuário em
 `%USERPROFILE%\Documents\AssistenteIA`. O instalador não inclui nem inicia o
 Ollama automaticamente: o serviço e os modelos precisam estar instalados
 separadamente.
+
+O instalador gerado localmente fica em:
+
+```text
+dist-installer\AssistenteIA-Setup.exe
+```
 
 ## Modos de interação
 
