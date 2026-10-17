@@ -64,11 +64,14 @@ def preparar_arquivos_usuario():
 
 
 class _ControleFala:
+    """Combina o cancelamento da interface com o monitor de interrupção."""
+
     def __init__(self, monitor, parar):
         self.monitor = monitor
         self.parar = parar
 
     def verificar(self):
+        """Interrompe a fala quando a janela ou o monitor solicitar."""
         from controles import InterromperFala
         if self.parar.is_set():
             raise InterromperFala()
@@ -91,20 +94,24 @@ class MotorDesktop:
         self.thread = threading.Thread(target=self._rodar, name="motor-assistente", daemon=True)
 
     def iniciar(self):
+        """Inicia a thread que processa pedidos fora da thread do Tk."""
         self.thread.start()
 
     def enviar_texto(self, texto):
+        """Enfileira texto digitado e cancela uma captura ou fala anterior."""
         self.cancelar_captura.set()
         self.parar_fala.set()
         self.pedidos.put(("texto", texto))
 
     def ativar_microfone(self):
+        """Solicita que o motor retome a captura de voz."""
         self.microfone_ativo.set()
         self.cancelar_captura.clear()
         self.parar_fala.set()
         self.pedidos.put(("acordar", ""))
 
     def desativar_microfone(self):
+        """Cancela a captura e a escuta de interrupções por voz."""
         self.microfone_ativo.clear()
         self.cancelar_captura.set()
         if self.monitor_ativo is not None:
@@ -114,6 +121,7 @@ class MotorDesktop:
         self.parar_fala.set()
 
     def fechar(self):
+        """Sinaliza o encerramento e libera confirmações ou operações pendentes."""
         self.encerrando.set()
         self.desativar_microfone()
         self.parar_fala.set()
@@ -124,6 +132,7 @@ class MotorDesktop:
         self.pedidos.put(("fechar", ""))
 
     def responder_confirmacao(self, aceita):
+        """Entrega ao motor a decisão tomada nos botões de confirmação."""
         with self.confirmacao_trava:
             if self.confirmacao:
                 self.confirmacao["aceita"] = bool(aceita)
@@ -166,6 +175,7 @@ class MotorDesktop:
             self.pedidos.put(("audio", monitor.comando))
 
     def _responder(self, conexao, historico, origem, pergunta):
+        """Processa uma pergunta, incluindo memória, ações, pesquisa e resposta."""
         pergunta = pergunta.strip()
         if not pergunta:
             return

@@ -15,11 +15,13 @@ STOPWORDS = set("a o as os um uma uns umas de da do das dos em no na nos nas par
 
 
 def normalizar(texto):
+    """Normaliza texto para comparação e deduplicação de fatos."""
     texto = unicodedata.normalize("NFKD", texto.casefold())
     return " ".join(re.findall(r"\w+", "".join(c for c in texto if not unicodedata.combining(c))))
 
 
 def iniciar_estrutura(conexao):
+    """Cria ou atualiza as tabelas usadas pela memória persistente."""
     colunas = {r[1] for r in conexao.execute("PRAGMA table_info(mensagens)")}
     for nome, tipo in (
         ("assunto", "TEXT NOT NULL DEFAULT 'geral'"),
@@ -70,11 +72,13 @@ def iniciar_estrutura(conexao):
 
 
 def contexto_ativo(conexao):
+    """Retorna o assunto e o projeto atualmente selecionados."""
     dados = dict(conexao.execute("SELECT chave, valor FROM config_memoria"))
     return dados.get("assunto", "geral"), dados.get("projeto", "")
 
 
 def definir_contexto(conexao, assunto=None, projeto=None):
+    """Atualiza o escopo da memória e devolve o novo contexto ativo."""
     with conexao:
         for chave, valor in (("assunto", assunto), ("projeto", projeto)):
             if valor is None:
@@ -104,6 +108,7 @@ def _chave_fato(texto):
 
 
 def detectar_fato(texto):
+    """Identifica afirmações do usuário que podem ser guardadas como memória."""
     texto = texto.strip()
     if not texto or "?" in texto or len(texto) > 1200 or "```" in texto:
         return None
@@ -188,6 +193,7 @@ def filtrar_historico(conexao, historico):
 
 
 def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=None):
+    """Salva ou atualiza um fato, vinculando-o às mensagens que o originaram."""
     texto = texto.strip()
     if not texto or len(texto) > 2000:
         raise ValueError("A lembrança deve ter entre 1 e 2000 caracteres.")
@@ -234,6 +240,7 @@ def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=No
 
 
 def editar(conexao, identificador, texto, assunto=None, projeto=None, importancia=None):
+    """Edita uma memória existente e mantém seus vínculos e o escopo válido."""
     antiga = conexao.execute("SELECT assunto,projeto,importancia FROM memorias WHERE id=?", (identificador,)).fetchone()
     if not antiga:
         raise ValueError("Lembrança não encontrada.")
@@ -258,6 +265,7 @@ def editar(conexao, identificador, texto, assunto=None, projeto=None, importanci
 
 
 def excluir(conexao, identificador):
+    """Remove uma memória e suas referências associadas."""
     if not conexao.execute("SELECT 1 FROM memorias WHERE id=?", (identificador,)).fetchone():
         raise ValueError("Lembrança não encontrada.")
     with conexao:
@@ -269,6 +277,7 @@ def excluir(conexao, identificador):
 
 
 def processar_mensagem(conexao, identificador):
+    """Extrai e registra fatos de uma mensagem ainda não processada."""
     if conexao.execute("SELECT 1 FROM mensagens_processadas WHERE mensagem_id=?", (identificador,)).fetchone():
         return
     registro = conexao.execute(
@@ -283,6 +292,7 @@ def processar_mensagem(conexao, identificador):
 
 
 def processar_pendentes(conexao):
+    """Processa em lote as mensagens novas que podem gerar memórias."""
     ultimo_id = 0
     while True:
         ids = conexao.execute("""
@@ -300,6 +310,7 @@ def processar_pendentes(conexao):
 
 
 def listar(conexao, todos=False):
+    """Lista memórias do contexto ativo ou de todos os contextos."""
     registros = conexao.execute(
         "SELECT id,conteudo,assunto,projeto,importancia FROM memorias ORDER BY importancia DESC,id DESC"
     ).fetchall()
@@ -313,6 +324,7 @@ def _no_escopo(assunto, projeto, ativo):
 
 
 def preferencias_de_estilo(conexao, limite=3):
+    """Obtém preferências de comunicação recentes para orientar respostas."""
     """Recupera preferências explícitas de conversa, mesmo em perguntas de outro tema."""
     ativo = contexto_ativo(conexao)
     preferencias = []
@@ -338,6 +350,7 @@ def preferencias_de_estilo(conexao, limite=3):
 
 
 def recentes(conexao, limite=8):
+    """Retorna fatos atualizados recentemente no contexto ativo."""
     ativo = contexto_ativo(conexao)
     registros = conexao.execute(
         "SELECT id,conteudo,assunto,projeto FROM mensagens WHERE papel='user' AND ignorar_memoria=0 ORDER BY id DESC"
@@ -359,6 +372,7 @@ def _cosseno(a, b):
 
 
 def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
+    """Seleciona memórias relevantes por escopo, termos e similaridade semântica."""
     ativo = contexto_ativo(conexao)
     def candidatos():
         for i, texto, assunto, projeto, importancia, vetor in conexao.execute("""
@@ -439,6 +453,7 @@ def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
 
 
 def indexar_fatos(conexao, gerar_vetores, modelo):
+    """Gera e atualiza vetores dos fatos que ainda não foram indexados."""
     pendentes = conexao.execute("""
         SELECT m.id,m.conteudo FROM memorias m LEFT JOIN vetores_lembrancas v
         ON v.memoria_id=m.id AND v.modelo=? WHERE v.memoria_id IS NULL
@@ -456,6 +471,7 @@ def indexar_fatos(conexao, gerar_vetores, modelo):
 
 
 def tratar_comando(conexao, texto):
+    """Executa comandos de memória e retorna resposta ou None para conversa normal."""
     texto = texto.strip()
     if normalizar(texto) in {"memorias", "listar memorias", "minhas memorias"} or texto == "/memorias":
         registros = listar(conexao, todos=True)
@@ -487,6 +503,7 @@ def tratar_comando(conexao, texto):
 
 
 def gerenciar(conexao, ler_texto):
+    """Apresenta o menu interativo de consulta e manutenção da memória."""
     from controles import SolicitarMenu
 
     while True:

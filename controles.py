@@ -11,6 +11,7 @@ class InterromperFala(Exception):
 
 
 def tecla_durante_fala():
+    """Lê atalhos não bloqueantes do Windows para menu e cancelamento da fala."""
     if os.name != "nt" or sys.stdin is None or not sys.stdin.isatty():
         return None
     import msvcrt

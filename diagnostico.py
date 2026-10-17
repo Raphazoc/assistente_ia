@@ -30,6 +30,7 @@ EVENTOS = {
 
 
 def _obter_logger():
+    """Inicializa, de forma thread-safe, o arquivo rotativo de diagnóstico."""
     global _logger
     with _trava:
         if _logger is None:
@@ -51,6 +52,7 @@ def _obter_logger():
 
 
 def encerrar():
+    """Fecha os manipuladores de log para permitir encerramento limpo."""
     global _logger
     with _trava:
         if _logger is not None:

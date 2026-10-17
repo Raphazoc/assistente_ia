@@ -10,6 +10,12 @@ O projeto foi pensado como uma base extensível para estudos de inteligência
 artificial aplicada, memória persistente, reconhecimento de voz, síntese de
 fala e recuperação de informação.
 
+Há duas formas de uso:
+
+- **Terminal**, executada por `main.py`, com menu para texto e voz.
+- **Aplicativo desktop para Windows**, executado por `aplicativo.py` ou pelo
+  instalador gerado em `dist-installer/`.
+
 ## Visão geral
 
 O assistente oferece:
@@ -22,6 +28,8 @@ O assistente oferece:
 - Resumos persistentes de conversas longas.
 - Comandos explícitos para salvar, listar, editar e excluir lembranças.
 - Pesquisa na internet com autorização por consulta.
+- Ações locais limitadas, como abrir programas, sites e pastas, listar pastas,
+  ler arquivos de texto, criar pastas e mover arquivos comuns.
 - Limites de consultas, páginas, tamanho de conteúdo e contexto.
 - Filtros para conteúdo adulto e fontes não públicas.
 - Voz online com alternativa local usando Piper.
@@ -38,10 +46,12 @@ O fluxo principal está concentrado em `main.py`, que coordena os módulos:
 | Módulo | Responsabilidade |
 | --- | --- |
 | `main.py` | Inicialização, ciclo de conversa, Ollama e integração dos recursos |
+| `aplicativo.py` | Interface desktop Windows e processamento fora da thread da interface |
 | `memoria.py` | Fatos persistentes, escopos, busca e gerenciamento da memória |
 | `resumos.py` | Resumos de conversas antigas e recuperação histórica |
 | `banco.py` | Backups, integridade e restauração do SQLite |
 | `internet.py` | Planejamento, busca, leitura e filtragem de fontes |
+| `acoes.py` | Planejamento, confirmação, validação e execução de ações locais |
 | `voz.py` | Captura e transcrição de áudio com Faster-Whisper |
 | `fala.py` | Síntese de fala online e local |
 | `ativacao.py` | Palavra de ativação e interrupção durante a fala |
@@ -65,7 +75,9 @@ acidental do cliente.
 
 ### Requisitos gerais
 
-- Windows, Linux ou macOS.
+- Windows para todos os recursos, incluindo a interface desktop e os atalhos
+  de teclado. O modo terminal foi escrito para também funcionar em Linux e
+  macOS, desde que os recursos dependentes do sistema estejam disponíveis.
 - Python 3.9 ou superior.
 - Git, caso o projeto seja obtido por clone.
 - Ollama instalado e em execução.
@@ -112,21 +124,22 @@ source .venv/bin/activate
 
 ### 3. Instalar dependências
 
-Para usar o modo texto e os recursos de pesquisa:
+Instale primeiro as dependências gerais:
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-Para habilitar reconhecimento e síntese de voz:
+Para habilitar a captura de áudio e a síntese de fala, instale também:
 
 ```powershell
 python -m pip install -r requirements-voz.txt
 ```
 
-O arquivo `requirements-voz.txt` inclui Faster-Whisper, Piper, Edge-TTS,
-SoundDevice e bibliotecas de suporte a áudio.
+O arquivo `requirements.txt` inclui Faster-Whisper para reconhecimento de voz.
+O arquivo `requirements-voz.txt` adiciona Piper, Edge-TTS, SoundDevice, AV,
+Emoji e bibliotecas de suporte a áudio.
 
 ### 4. Instalar e preparar o Ollama
 
@@ -152,7 +165,6 @@ Os nomes dos modelos precisam corresponder às constantes definidas em
 
 Para usar a janela Windows instalável, veja [INSTALACAO.md](INSTALACAO.md).
 Ela mostra Escrita e Áudio em dois painéis lado a lado, sem sobreposição.
-O modo por terminal abaixo continua disponível.
 
 Na raiz do projeto, com o ambiente virtual ativado:
 
@@ -171,6 +183,28 @@ Na inicialização, o programa:
 
 Para encerrar uma sessão, use `sair`, `encerrar` ou `desligar assistente`.
 Também é possível abrir o menu digitando `menu` ou pressionando `Esc`.
+
+### Aplicativo desktop para Windows
+
+Para criar o aplicativo empacotado e, opcionalmente, o instalador:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1
+```
+
+O script gera `dist\AssistenteIA\AssistenteIA.exe` e, quando o Inno Setup
+está instalado, `dist-installer\AssistenteIA-Setup.exe`. Para gerar somente a
+pasta executável:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1 -SomenteAplicativo
+```
+
+O aplicativo desktop mantém os dados do usuário em
+`%LOCALAPPDATA%\AssistenteIA` e os arquivos organizados pela assistente em
+`%USERPROFILE%\Documents\AssistenteIA`. O instalador não inclui nem inicia o
+Ollama automaticamente: o serviço e os modelos precisam estar instalados
+separadamente.
 
 ## Modos de interação
 
@@ -242,7 +276,8 @@ o histórico como instrução ativa.
 
 ## Pesquisa na internet
 
-A pesquisa é desativada por padrão em `config_internet.json`:
+A pesquisa é controlada por `config_internet.json`. Neste repositório, o
+arquivo inicial está habilitado:
 
 ```json
 {
@@ -270,6 +305,23 @@ Para solicitar uma consulta diretamente, use:
 Não habilite esse recurso se o objetivo for executar o programa totalmente
 offline. A geração da resposta e a memória permanecem locais, mas o recurso
 de pesquisa acessa serviços externos quando autorizado.
+
+## Ações locais
+
+Quando o pedido começa com um verbo de ação, a assistente pode propor uma
+operação local. O plano é validado e exige confirmação antes da execução.
+Atualmente são suportadas:
+
+- abrir Bloco de Notas, Calculadora ou Explorador de Arquivos;
+- abrir uma URL HTTP/HTTPS pública após verificar seu conteúdo;
+- abrir ou listar uma pasta do projeto;
+- ler arquivos de texto permitidos, com limite de tamanho;
+- criar uma pasta;
+- mover arquivos comuns dentro da pasta do projeto.
+
+As ações não podem acessar pastas protegidas, sair da pasta do projeto ou
+alterar arquivos essenciais. Perguntas sobre como realizar uma tarefa não são
+tratadas automaticamente como autorização para executá-la.
 
 ## Voz e áudio
 
@@ -378,9 +430,11 @@ python -m pytest tests/test_internet.py
 ```text
 .
 ├── main.py                 # Entrada e ciclo principal
+├── aplicativo.py           # Interface desktop Windows
 ├── memoria.py              # Memória e recuperação
 ├── resumos.py              # Resumos persistentes
 ├── internet.py             # Pesquisa autorizada
+├── acoes.py                # Ações locais confirmadas
 ├── banco.py                # Backup e restauração
 ├── voz.py                  # Reconhecimento de fala
 ├── fala.py                 # Síntese de fala
@@ -392,6 +446,8 @@ python -m pytest tests/test_internet.py
 ├── docs/                   # Documentação detalhada dos subsistemas
 ├── vozes/                  # Modelo local de voz
 ├── tests/                  # Testes automatizados
+├── installer/              # Script de empacotamento Windows
+├── INSTALACAO.md           # Empacotamento e instalação do aplicativo
 ├── requirements.txt        # Dependências gerais
 └── requirements-voz.txt    # Dependências de áudio e voz
 ```

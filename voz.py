@@ -225,6 +225,7 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
 
 
 def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None):
+    """Captura e transcreve frases continuamente até receber cancelamento."""
     inicio = time.monotonic()
     audio = capturar_audio(cancelar=cancelar, teclado=teclado, aguardar_fala=aguardar_fala)
     if audio is None:
@@ -245,6 +246,7 @@ def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None):
 
 
 def transcrever_audio(audio, modo_interrupcao=False):
+    """Transcreve um vetor de áudio usando o modelo Whisper carregado."""
     dicas = {}
     if modo_interrupcao:
         from ativacao import carregar_configuracao
@@ -279,6 +281,7 @@ def transcrever_audio(audio, modo_interrupcao=False):
 
 
 def main():
+    """Executa um teste simples de captura e transcrição pelo terminal."""
     print("\nReconhecimento de voz iniciado. Esc para encerrar este teste.")
     while True:
         try:

@@ -66,20 +66,24 @@ SCHEMA_FILTRO = {
 
 
 def normalizar(texto):
+    """Padroniza texto para comparações sem diferenciar maiúsculas ou acentos."""
     texto = unicodedata.normalize("NFKD", texto.casefold())
     return " ".join("".join(c for c in texto if not unicodedata.combining(c)).split())
 
 
 def conteudo_bloqueado(texto):
+    """Identifica conteúdo explícito em texto obtido de uma página."""
     return bool(PADRAO_ADULTO.search(normalizar(unquote(texto))))
 
 
 def pedido_bloqueado(texto):
+    """Verifica se uma consulta contém conteúdo proibido ou instruções perigosas."""
     pedido = normalizar(unquote(texto))
     return bool(PADRAO_ADULTO.search(pedido) or PADRAO_INSTRUCAO_PERIGOSA.search(pedido))
 
 
 def habilitada():
+    """Informa se a pesquisa na internet está habilitada na configuração local."""
     try:
         return json.loads(CONFIGURACAO.read_text(encoding="utf-8")).get("ativa") is True
     except (OSError, ValueError, AttributeError):
@@ -87,6 +91,7 @@ def habilitada():
 
 
 def definir_habilitada(ativa):
+    """Grava de forma atômica a preferência de pesquisa na internet."""
     temporario = CONFIGURACAO.with_suffix(".tmp")
     temporario.write_text(json.dumps({"ativa": bool(ativa)}, indent=2) + "\n", encoding="utf-8")
     temporario.replace(CONFIGURACAO)
@@ -117,6 +122,7 @@ class Pesquisa:
     fontes: list[Fonte] = field(default_factory=list)
 
     def contexto(self):
+        """Converte o resultado filtrado em contexto limitado para o modelo."""
         dados = []
         for numero, fonte in enumerate(self.fontes, 1):
             registro = {
@@ -135,6 +141,7 @@ class Pesquisa:
 
 
 def planejar(pergunta, historico, gerar_json):
+    """Decide se deve pesquisar e transforma a intenção em consultas seguras."""
     if not habilitada():
         return Pesquisa("desativada", "A pesquisa na internet está desativada.")
     if pedido_bloqueado(pergunta):
@@ -178,6 +185,7 @@ def planejar(pergunta, historico, gerar_json):
 
 
 def consultas_validas(consultas):
+    """Confere quantidade, tamanho e caracteres permitidos nas consultas."""
     return (
         isinstance(consultas, (tuple, list)) and 1 <= len(consultas) <= MAX_CONSULTAS
         and all(isinstance(q, str) and 3 <= len(q.strip()) <= 200
@@ -186,6 +194,7 @@ def consultas_validas(consultas):
 
 
 def validar_url(url):
+    """Valida uma URL pública HTTP/HTTPS antes de qualquer conexão."""
     if not isinstance(url, str) or len(url) > 800 or any(ord(c) < 33 for c in url):
         raise ValueError("URL inválida.")
     partes = urlsplit(url)
@@ -210,6 +219,7 @@ def validar_url(url):
 
 
 def enderecos_publicos(host, port):
+    """Resolve um host e rejeita endereços locais ou reservados."""
     enderecos = list(dict.fromkeys(r[4][0] for r in socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)))
     if not enderecos or any(not ipaddress.ip_address(ip).is_global for ip in enderecos):
         raise ValueError("A resolução do domínio aponta para uma rede privada ou reservada.")
@@ -232,6 +242,7 @@ class RedePublica(httpcore.SyncBackend):
 
 
 def baixar_html(url):
+    """Baixa uma página com limites de tamanho, redirecionamento e segurança."""
     contexto_ssl = ssl.create_default_context(cafile=certifi.where())
     inicio = time.monotonic()
     with httpcore.ConnectionPool(network_backend=RedePublica(), ssl_context=contexto_ssl, max_connections=1) as cliente:
@@ -276,6 +287,7 @@ def baixar_html(url):
 
 
 def extrair_pagina(html):
+    """Extrai texto legível do HTML, removendo marcação e conteúdo irrelevante."""
     from bs4 import BeautifulSoup
 
     sopa = BeautifulSoup(html, "html.parser")
@@ -292,6 +304,7 @@ def extrair_pagina(html):
 
 
 def buscar_web(consulta):
+    """Consulta o mecanismo de busca configurado e retorna fontes resumidas."""
     # A versão é fixada porque o payload estrito é imposto explicitamente aqui.
     from ddgs.engines.duckduckgo import Duckduckgo
 
@@ -309,6 +322,7 @@ def buscar_web(consulta):
 
 
 def filtrar_fontes(fontes, gerar_json):
+    """Seleciona fontes permitidas e remove conteúdo não confiável ou bloqueado."""
     candidatas = []
     for fonte in fontes:
         try:
@@ -332,6 +346,7 @@ def filtrar_fontes(fontes, gerar_json):
 
 
 def executar_pesquisa(plano, autorizada, gerar_json):
+    """Executa consultas autorizadas e devolve um objeto de pesquisa filtrado."""
     if autorizada is not True:
         return Pesquisa("negada", "O usuário não autorizou a pesquisa. Nenhum buscador foi acessado.")
     if not habilitada():
@@ -370,6 +385,7 @@ def executar_pesquisa(plano, autorizada, gerar_json):
 
 
 def preparar(pergunta, historico, gerar_json, pedir_autorizacao):
+    """Planeja, autoriza e executa uma pesquisa para uma pergunta do usuário."""
     plano = planejar(pergunta, historico, gerar_json)
     if not isinstance(plano, PlanoPesquisa):
         return plano
@@ -378,6 +394,7 @@ def preparar(pergunta, historico, gerar_json, pedir_autorizacao):
 
 
 def anexar_fontes(resposta, pesquisa):
+    """Anexa ao texto da resposta as fontes que foram efetivamente consultadas."""
     permitidas = {f.url for f in pesquisa.fontes}
     def limpar_link(match):
         return match.group(0) if match.group(2) in permitidas else match.group(1) + " (link não consultado)"

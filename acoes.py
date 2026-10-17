@@ -39,12 +39,15 @@ MAX_LEITURA = 50_000
 
 @dataclass(frozen=True)
 class PlanoAcao:
+    """Representa uma ação já identificada, validada e pronta para confirmação."""
+
     tipo: str
     alvo: str
     destino: str = ""
 
 
 def _normalizar(texto):
+    """Converte o texto para uma forma simples, sem acentos e em minúsculas."""
     texto = unicodedata.normalize("NFKD", texto.casefold())
     return " ".join(re.findall(r"\w+", "".join(c for c in texto if not unicodedata.combining(c))))
 
@@ -61,6 +64,7 @@ def parece_pedido_de_acao(texto):
 
 
 def _caminho(alvo, raiz, existe=True):
+    """Resolve um caminho e impede acesso fora do projeto ou a pastas protegidas."""
     if not alvo or "\x00" in alvo:
         raise ValueError("Informe um caminho dentro da pasta do projeto.")
     base = Path(raiz).resolve()
@@ -111,6 +115,7 @@ def validar(plano, raiz):
 
 
 def planejar(pedido, raiz, gerar_json):
+    """Interpreta um pedido, gera um plano de ação e valida seus parâmetros."""
     if not parece_pedido_de_acao(pedido):
         return None
     sistema = (
@@ -134,6 +139,7 @@ def planejar(pedido, raiz, gerar_json):
 
 
 def descricao(plano):
+    """Monta o texto apresentado ao usuário antes da confirmação da ação."""
     nomes = {
         "abrir_programa": "Abrir programa", "abrir_site": "Verificar e abrir site",
         "abrir_pasta": "Abrir pasta", "listar_pasta": "Listar pasta",
@@ -145,6 +151,7 @@ def descricao(plano):
 
 
 def executar(plano, raiz, gerar_json, mostrar=None):
+    """Executa uma ação previamente validada e retorna um resumo do resultado."""
     plano = validar(plano, raiz)
     if plano.tipo == "abrir_programa":
         executavel = Path(os.environ.get("SystemRoot", "C:\\Windows")) / "System32" / PROGRAMAS[plano.alvo]

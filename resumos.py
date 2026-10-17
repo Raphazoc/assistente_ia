@@ -21,6 +21,7 @@ class _Mensagem:
 
 
 def iniciar_estrutura(conexao):
+    """Cria tabelas e índices usados pelos resumos persistentes."""
     conexao.execute("""
         CREATE TABLE IF NOT EXISTS resumos_conversa (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,6 +89,7 @@ def _importancia(texto):
 
 
 def _resumo_extrativo(mensagens):
+    """Monta um resumo local priorizando fatos, decisões e falas do usuário."""
     por_conteudo = {}
     for mensagem in mensagens:
         texto = _limpar(mensagem.conteudo, mensagem.papel == "assistant")
@@ -123,6 +125,7 @@ def _resumo_extrativo(mensagens):
 
 
 def _trocas_completas(mensagens):
+    """Agrupa perguntas com suas respostas e ignora trocas incompletas."""
     pendentes = []
     for mensagem in mensagens:
         if mensagem.papel == "user":
@@ -135,6 +138,7 @@ def _trocas_completas(mensagens):
 
 
 def _lotes(trocas):
+    """Divide trocas completas em lotes que cabem no limite de entrada."""
     lote = []
     tamanho = 0
     for troca in trocas:
@@ -150,6 +154,7 @@ def _lotes(trocas):
 
 
 def _mensagens_para_modelo(mensagens):
+    """Converte mensagens em instruções e dados seguros para o resumidor."""
     # Trocas individuais muito longas também respeitam o orçamento de entrada.
     limite_por_mensagem = max(1, MAX_CARACTERES_ENTRADA // len(mensagens) - 50)
     fontes = [

@@ -38,6 +38,7 @@ class FalhaVozOnline(Exception):
 
 @lru_cache(maxsize=1)
 def carregar_voz():
+    """Carrega uma única vez o modelo local usado como reserva de voz."""
     from piper import PiperVoice
 
     if not MODELO_VOZ.exists():
@@ -135,6 +136,7 @@ def gerar_audio_online(texto):
 
 
 def verificar_interrupcao(controle):
+    """Propaga comandos de menu ou cancelamento durante a reprodução."""
     if controle is not None:
         controle.verificar()
     else:
@@ -147,6 +149,7 @@ def verificar_interrupcao(controle):
 
 @contextmanager
 def executor_audio():
+    """Fornece um executor para preparar áudio sem bloquear a reprodução."""
     executor = ThreadPoolExecutor(max_workers=1)
     try:
         yield executor
@@ -156,6 +159,7 @@ def executor_audio():
 
 
 def aguardar_audio(futuro, controle):
+    """Aguarda áudio pronto enquanto continua aceitando interrupções."""
     while not futuro.done():
         verificar_interrupcao(controle)
         time.sleep(0.02)
@@ -164,6 +168,7 @@ def aguardar_audio(futuro, controle):
 
 
 def escrever_audio(saida, audio, taxa, controle):
+    """Envia o áudio ao dispositivo em blocos curtos e canceláveis."""
     tamanho = max(2, int(taxa * 0.02) * 2)
     try:
         for inicio in range(0, len(audio), tamanho):
@@ -175,6 +180,7 @@ def escrever_audio(saida, audio, taxa, controle):
 
 
 def falar_online(texto, controle=None):
+    """Reproduz texto usando a voz online com preparação antecipada dos trechos."""
     trechos = dividir_texto(texto)
     if not trechos:
         return
@@ -208,6 +214,7 @@ def falar_online(texto, controle=None):
 
 
 def falar_local(texto, controle=None):
+    """Reproduz texto pelo modelo local quando a voz online falha ou é desligada."""
     from piper import SynthesisConfig
 
     voz = carregar_voz()
@@ -237,6 +244,7 @@ def falar_local(texto, controle=None):
 
 
 def falar(texto, controle=None):
+    """Escolhe a voz configurada e aplica a limpeza do texto antes de falar."""
     try:
         _falar(texto, controle)
     except InterromperFala:
@@ -244,6 +252,7 @@ def falar(texto, controle=None):
 
 
 def _falar(texto, controle=None):
+    """Executa a estratégia de voz e preserva o texto pendente em uma falha online."""
     global _online_indisponivel_ate
 
     texto = limpar_texto(texto)

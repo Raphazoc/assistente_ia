@@ -20,6 +20,7 @@ NOME_BACKUP = re.compile(r"^(?:automatico|manual|antes_restauro)_\d{8}T\d{6}Z_[0
 
 
 def pasta_backups(caminho_banco):
+    """Retorna a pasta reservada às cópias do banco informado."""
     return Path(caminho_banco).resolve().parent / "backups"
 
 
@@ -29,6 +30,7 @@ def _conexao_corresponde(conexao, caminho_banco):
 
 
 def verificar_integridade(conexao, exigir_estrutura=False):
+    """Confere a integridade SQLite e, opcionalmente, a estrutura esperada."""
     if conexao.execute("PRAGMA integrity_check").fetchone() != ("ok",):
         raise sqlite3.DatabaseError("O banco não passou na verificação de integridade.")
     if exigir_estrutura:
@@ -43,6 +45,7 @@ def _novo_nome(tipo):
 
 
 def criar_backup(conexao, caminho_banco, tipo="manual"):
+    """Cria e valida uma cópia consistente do banco usando o backup SQLite."""
     if tipo not in {"automatico", "manual", "antes_restauro"}:
         raise ValueError("Tipo de backup inválido.")
     if not _conexao_corresponde(conexao, caminho_banco):
@@ -85,6 +88,7 @@ def backup_automatico(conexao, caminho_banco):
 
 
 def listar_backups(caminho_banco):
+    """Lista somente backups locais com nomes e arquivos válidos."""
     pasta = pasta_backups(caminho_banco)
     return sorted((p for p in pasta.glob("*.db") if NOME_BACKUP.fullmatch(p.name) and not p.is_symlink()), reverse=True) if pasta.exists() else []
 
@@ -122,6 +126,7 @@ def restaurar(caminho_banco, nome_backup):
 
 
 def main():
+    """Executa a interface de linha de comando para backup e restauração."""
     argumentos = argparse.ArgumentParser(description="Backup e restauração local da memória SQLite")
     argumentos.add_argument("acao", choices=("listar", "backup", "restaurar"))
     argumentos.add_argument("nome", nargs="?", help="Nome retornado por 'listar'")

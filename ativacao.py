@@ -18,12 +18,14 @@ COMANDOS_DIRETOS = {
 
 
 def normalizar(texto):
+    """Normaliza uma frase para reconhecer comandos sem acentos."""
     texto = unicodedata.normalize("NFKD", texto.casefold())
     texto = "".join(c for c in texto if not unicodedata.combining(c))
     return " ".join(re.findall(r"\w+", texto))
 
 
 def carregar_configuracao():
+    """Carrega a configuração da palavra de ativação usando valores padrão."""
     if not CONFIGURACAO.exists():
         return dict(PADRAO)
     dados = json.loads(CONFIGURACAO.read_text(encoding="utf-8"))
@@ -31,6 +33,7 @@ def carregar_configuracao():
 
 
 def definir_palavra(palavra):
+    """Valida e salva uma nova palavra ou expressão de ativação."""
     palavra = " ".join(palavra.split())
     if not re.fullmatch(r"[^\W\d_]+(?: [^\W\d_]+){0,3}", palavra) or not 3 <= len(palavra) <= 40:
         raise ValueError("Use de 3 a 40 letras, em uma palavra ou até quatro palavras.")
@@ -75,12 +78,14 @@ class MonitorInterrupcao:
         self.thread = None
 
     def __enter__(self):
+        """Inicia a escuta de interrupções quando o recurso está habilitado."""
         if self.habilitado and carregar_configuracao()["interromper_por_voz"]:
             self.thread = threading.Thread(target=self._escutar, daemon=True)
             self.thread.start()
         return self
 
     def __exit__(self, *args):
+        """Solicita o encerramento da escuta e aguarda sua finalização breve."""
         self.finalizar.set()
         if self.thread:
             self.thread.join(timeout=0.2)
@@ -107,6 +112,7 @@ class MonitorInterrupcao:
                 print("[VOZ] Interrupção por microfone indisponível; use Espaço ou Esc.")
 
     def processar(self, texto):
+        """Interpreta uma transcrição e registra comando de interrupção válido."""
         frase = normalizar(texto)
         if not frase or frase in self.texto_falado:
             return  # Não reage a uma transcrição que repete a própria resposta.
