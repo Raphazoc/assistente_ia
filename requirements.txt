@@ -1,0 +1,4 @@
+-r requirements-voz.txt
+ollama>=0.6.3,<0.7
+faster-whisper==1.2.1
+numpy>=2,<3

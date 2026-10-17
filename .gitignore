@@ -1,0 +1,22 @@
+# Ambiente Python e arquivos gerados
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Conversas e cópias de segurança do banco ficam apenas neste computador
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+
+# Configurações privadas e logs
+.env
+.env.*
+!.env.example
+*.log

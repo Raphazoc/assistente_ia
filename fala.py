@@ -1,0 +1,277 @@
+import asyncio
+import io
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from functools import lru_cache
+from pathlib import Path
+
+import emoji
+import sounddevice as sd
+from controles import InterromperFala, SolicitarMenu, tecla_durante_fala
+
+
+PASTA_PROJETO = Path(__file__).resolve().parent
+MODELO_VOZ = PASTA_PROJETO / "vozes" / "pt_BR-faber-medium.onnx"
+
+# A voz principal envia o texto a ser falado ao serviço online da Microsoft.
+# Para uma voz feminina, use "pt-BR-FranciscaNeural".
+VOZ_ONLINE = "pt-BR-AntonioNeural"
+VELOCIDADE_ONLINE = "+3%"
+TOM_ONLINE = "+0Hz"
+USAR_VOZ_ONLINE = True
+TAXA_AUDIO_ONLINE = 24000
+MAX_CARACTERES_TRECHO = 450
+INTERVALO_RECONEXAO = 60
+_online_indisponivel_ate = 0.0
+
+
+class FalhaVozOnline(Exception):
+    """Guarda somente o texto que ainda não foi reproduzido."""
+
+    def __init__(self, texto_pendente, erro):
+        super().__init__(str(erro))
+        self.texto_pendente = texto_pendente
+
+
+@lru_cache(maxsize=1)
+def carregar_voz():
+    from piper import PiperVoice
+
+    if not MODELO_VOZ.exists():
+        raise FileNotFoundError(f"Modelo de voz não encontrado: {MODELO_VOZ}")
+    print("Carregando voz local de reserva...")
+    return PiperVoice.load(str(MODELO_VOZ))
+
+
+def limpar_texto(texto):
+    """Preserva a pontuação da fala e remove conteúdo que não deve ser lido."""
+    texto = re.sub(r"<think>.*?(?:</think>|$)", "", texto, flags=re.S)
+    texto = re.sub(
+        r"```.*?(?:```|$)",
+        " O código está disponível na resposta em texto. ",
+        texto,
+        flags=re.S,
+    )
+    texto = emoji.replace_emoji(texto, replace="")
+    texto = re.sub(r"!?\[([^\]]+)\]\([^)]+\)", r"\1", texto)
+    texto = re.sub(r"https?://\S+", "", texto)
+    texto = re.sub(r"(?m)^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)", "", texto)
+    texto = re.sub(r"[*`#_]", "", texto)
+    texto = re.sub(r"(?m)^\s*[-=]{3,}\s*$", "", texto)
+
+    # Listas e títulos viram frases, em vez de emendar todas as linhas.
+    linhas = []
+    for linha in texto.splitlines():
+        linha = " ".join(linha.split())
+        if linha:
+            if linha[-1] not in ".!?;:,":
+                linha += "."
+            linhas.append(linha)
+    return " ".join(linhas)
+
+
+def dividir_texto(texto):
+    """Agrupa frases para preservar a entonação, com início de fala mais rápido."""
+    trechos = []
+    while len(texto) > MAX_CARACTERES_TRECHO:
+        janela = texto[:MAX_CARACTERES_TRECHO + 1]
+        pausas = list(re.finditer(r"[.!?;:,]\s+", janela))
+        pausas = [p for p in pausas if p.end() >= MAX_CARACTERES_TRECHO // 2]
+        corte = pausas[-1].end() if pausas else janela.rfind(" ")
+        if corte <= 0:
+            corte = texto.find(" ", MAX_CARACTERES_TRECHO)
+            if corte < 0:
+                break
+        trechos.append(texto[:corte].strip())
+        texto = texto[corte:].strip()
+    if texto:
+        trechos.append(texto)
+    return trechos
+
+
+def gerar_audio_online(texto):
+    """Recebe MP3 e converte para PCM em memória, sem player externo."""
+    import av
+    import edge_tts
+
+    comunicador = edge_tts.Communicate(
+        texto,
+        voice=VOZ_ONLINE,
+        rate=VELOCIDADE_ONLINE,
+        pitch=TOM_ONLINE,
+        connect_timeout=4,
+        receive_timeout=8,
+    )
+    async def receber_audio():
+        partes = []
+        async for evento in comunicador.stream():
+            if evento["type"] == "audio":
+                partes.append(evento["data"])
+        return b"".join(partes)
+
+    async def receber_com_prazo():
+        return await asyncio.wait_for(receber_audio(), timeout=15)
+
+    # A API assíncrona propaga erros de rede, permitindo usar a voz local.
+    mp3 = asyncio.run(receber_com_prazo())
+    if not mp3:
+        raise RuntimeError("O serviço de voz não retornou áudio.")
+
+    conversor = av.AudioResampler(format="s16", layout="mono", rate=TAXA_AUDIO_ONLINE)
+    partes = []
+    with av.open(io.BytesIO(mp3), format="mp3") as arquivo:
+        for quadro in arquivo.decode(audio=0):
+            for convertido in conversor.resample(quadro):
+                partes.append(convertido.to_ndarray().tobytes())
+        for convertido in conversor.resample(None):
+            partes.append(convertido.to_ndarray().tobytes())
+    audio = b"".join(partes)
+    if not audio:
+        raise RuntimeError("O áudio recebido não pôde ser decodificado.")
+    return audio
+
+
+def verificar_interrupcao(controle):
+    if controle is not None:
+        controle.verificar()
+    else:
+        tecla = tecla_durante_fala()
+        if tecla == "menu":
+            raise SolicitarMenu()
+        if tecla == "parar":
+            raise InterromperFala()
+
+
+@contextmanager
+def executor_audio():
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        yield executor
+    finally:
+        # Uma requisição em andamento pode terminar sem atrasar o menu/cancelamento.
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def aguardar_audio(futuro, controle):
+    while not futuro.done():
+        verificar_interrupcao(controle)
+        time.sleep(0.02)
+    verificar_interrupcao(controle)
+    return futuro.result()
+
+
+def escrever_audio(saida, audio, taxa, controle):
+    tamanho = max(2, int(taxa * 0.02) * 2)
+    try:
+        for inicio in range(0, len(audio), tamanho):
+            verificar_interrupcao(controle)
+            saida.write(audio[inicio:inicio + tamanho])
+    except BaseException:
+        saida.abort()  # Descarta também o áudio que já estava no buffer do dispositivo.
+        raise
+
+
+def falar_online(texto, controle=None):
+    trechos = dividir_texto(texto)
+    if not trechos:
+        return
+    with executor_audio() as executor:
+        proximo = executor.submit(gerar_audio_online, trechos[0])
+        # Só abre o dispositivo depois de obter o primeiro áudio válido.
+        try:
+            audio = aguardar_audio(proximo, controle)
+        except (InterromperFala, SolicitarMenu):
+            raise
+        except Exception as erro:
+            raise FalhaVozOnline(texto, erro) from erro
+
+        with sd.RawOutputStream(
+            samplerate=TAXA_AUDIO_ONLINE, channels=1, dtype="int16", latency="high"
+        ) as saida:
+            for indice, trecho in enumerate(trechos):
+                if indice:
+                    try:
+                        audio = aguardar_audio(proximo, controle)
+                    except (InterromperFala, SolicitarMenu):
+                        saida.abort()
+                        raise
+                    except Exception as erro:
+                        pendente = " ".join(trechos[indice:])
+                        raise FalhaVozOnline(pendente, erro) from erro
+                if indice + 1 < len(trechos):
+                    # Gera o próximo trecho enquanto o atual está tocando.
+                    proximo = executor.submit(gerar_audio_online, trechos[indice + 1])
+                escrever_audio(saida, audio, TAXA_AUDIO_ONLINE, controle)
+
+
+def falar_local(texto, controle=None):
+    from piper import SynthesisConfig
+
+    voz = carregar_voz()
+    configuracao = SynthesisConfig(
+        length_scale=0.94, noise_scale=0.7, noise_w_scale=0.8,
+    )
+    gerador = iter(voz.synthesize(texto, syn_config=configuracao))
+    trecho = next(gerador, None)
+    if trecho is None:
+        return
+
+    with executor_audio() as executor:
+        with sd.RawOutputStream(
+            samplerate=trecho.sample_rate,
+            channels=trecho.sample_channels,
+            dtype="int16",
+            latency="high",
+        ) as saida:
+            while trecho is not None:
+                proximo = executor.submit(next, gerador, None)
+                escrever_audio(saida, trecho.audio_int16_bytes, trecho.sample_rate, controle)
+                try:
+                    trecho = aguardar_audio(proximo, controle)
+                except (InterromperFala, SolicitarMenu):
+                    saida.abort()
+                    raise
+
+
+def falar(texto, controle=None):
+    try:
+        _falar(texto, controle)
+    except InterromperFala:
+        print("[VOZ] Fala interrompida.")
+
+
+def _falar(texto, controle=None):
+    global _online_indisponivel_ate
+
+    texto = limpar_texto(texto)
+    if not texto:
+        return
+    print("\nIA está falando...")
+    if USAR_VOZ_ONLINE and time.monotonic() >= _online_indisponivel_ate:
+        try:
+            if controle is None:
+                falar_online(texto)
+            else:
+                falar_online(texto, controle=controle)
+            return
+        except FalhaVozOnline as erro:
+            _online_indisponivel_ate = time.monotonic() + INTERVALO_RECONEXAO
+            print(f"[VOZ] Serviço online indisponível; usando voz local. Detalhes: {erro}")
+            texto = erro.texto_pendente
+    if controle is None:
+        falar_local(texto)
+    else:
+        falar_local(texto, controle=controle)
+
+
+def main():
+    falar(
+        "Olá! Como foi o seu dia? Estou aqui para conversar com você. "
+        "Podemos continuar o seu projeto com calma, uma etapa de cada vez."
+    )
+
+
+if __name__ == "__main__":
+    main()
