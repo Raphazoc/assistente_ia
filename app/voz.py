@@ -15,13 +15,20 @@ from . import diagnostico
 
 TAXA_AMOSTRAGEM = 16000
 AMOSTRAS_POR_BLOCO = 512  # Janela de 32 ms usada pelo Silero VAD v6.
-SILENCIO_FINAL = 1.1
+SILENCIO_FINAL = 1.5
 DURACAO_MINIMA_FALA = 0.12
 DURACAO_MAXIMA_FALA = 30
 TEMPO_ESPERA_INICIO = 10
 MARGEM_INICIO = 0.25
 LIMIAR_INICIO = 0.5
 LIMIAR_CONTINUACAO = 0.35
+MODELO_RECONHECIMENTO = "small"
+IDIOMA_RECONHECIMENTO = "pt"
+TERMOS_EM_INGLES = (
+    "Python, GitHub, Git, VS Code, Visual Studio Code, Ollama, Whisper, "
+    "ChatGPT, OpenAI, Windows, Linux, JavaScript, TypeScript, API, GPU, RTX, "
+    "Discord, WhatsApp, Minecraft"
+)
 _trava_transcricao = threading.Lock()
 _trava_preparacao = threading.Lock()
 _preparacao_iniciada = False
@@ -76,15 +83,22 @@ def carregar_modelo():
     from faster_whisper import WhisperModel
 
     print("Carregando reconhecimento de voz...")
-    if gpu_transcricao_disponivel():
+    for nome in (MODELO_RECONHECIMENTO, "base"):
+        if gpu_transcricao_disponivel():
+            try:
+                modelo = WhisperModel(nome, device="cuda", compute_type="int8_float16", cpu_threads=4, num_workers=1)
+                diagnostico.registrar("whisper.gpu_carregada")
+                return modelo
+            except (RuntimeError, OSError) as erro:
+                diagnostico.registrar("whisper.gpu_falhou", erro=erro)
         try:
-            modelo = WhisperModel("base", device="cuda", compute_type="int8_float16", cpu_threads=4, num_workers=1)
-            diagnostico.registrar("whisper.gpu_carregada")
+            modelo = WhisperModel(nome, device="cpu", compute_type="int8", cpu_threads=4, num_workers=1)
+            diagnostico.registrar("whisper.cpu_carregada")
             return modelo
-        except (RuntimeError, OSError) as erro:
-            diagnostico.registrar("whisper.gpu_falhou", erro=erro)
-    diagnostico.registrar("whisper.cpu_carregada")
-    return WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=4, num_workers=1)
+        except Exception as erro:
+            diagnostico.registrar("whisper.modelo_falhou", erro=erro)
+            if nome == "base":
+                raise
 
 
 def preparar_modelos():
@@ -196,7 +210,8 @@ def atalho_menu_pressionado():
     return False
 
 
-def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None, aguardar_fala=False):
+def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
+                   aguardar_fala=False, ao_nivel=None):
     """Retorna None para abrir o menu, ou um vetor de áudio da frase."""
     if teclado and atalho_menu_pressionado():
         return None
@@ -212,6 +227,7 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
         dtype="float32",
         blocksize=AMOSTRAS_POR_BLOCO,
     ) as microfone:
+        blocos_lidos = 0
         while True:
             if (cancelar is not None and cancelar.is_set()) or (teclado and atalho_menu_pressionado()):
                 return None
@@ -220,14 +236,18 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
                 raise RuntimeError("A captura perdeu áudio. Tente falar novamente.")
             bloco = filtro.processar(bloco[:, 0])
             probabilidade = filtro.validar(bloco, detector.probabilidade(bloco))
+            blocos_lidos += 1
+            if ao_nivel is not None and blocos_lidos % 4 == 0:
+                ao_nivel(min(1.0, float(np.sqrt(np.mean(bloco * bloco))) * 35))
             if gravador.processar(bloco, probabilidade):
                 return gravador.audio()
 
 
-def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None):
+def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None, ao_nivel=None):
     """Captura e transcreve frases continuamente até receber cancelamento."""
     inicio = time.monotonic()
-    audio = capturar_audio(cancelar=cancelar, teclado=teclado, aguardar_fala=aguardar_fala)
+    audio = capturar_audio(cancelar=cancelar, teclado=teclado, aguardar_fala=aguardar_fala,
+                           ao_nivel=ao_nivel)
     if audio is None:
         if cancelar is not None and cancelar.is_set():
             return ""
@@ -255,20 +275,30 @@ def transcrever_audio(audio, modo_interrupcao=False):
             "hotwords": palavra,
             "initial_prompt": f"{palavra}, pare. {palavra}, modo texto. {palavra}, menu.",
         }
+    else:
+        dicas = {
+            "hotwords": TERMOS_EM_INGLES,
+            "initial_prompt": ("I am speaking English and may mention " if IDIOMA_RECONHECIMENTO == "en" else
+                               "Estou conversando em português e posso citar ") + TERMOS_EM_INGLES + ".",
+        }
     with _trava_transcricao:
         for tentativa in range(2):
             modelo = carregar_modelo()
             try:
                 segmentos, _ = modelo.transcribe(
-                    audio, language="pt", vad_filter=False, beam_size=1,
-                    condition_on_previous_text=False, no_speech_threshold=0.5,
+                    audio, language=IDIOMA_RECONHECIMENTO, vad_filter=False,
+                    beam_size=1 if modo_interrupcao else 5,
+                    best_of=1 if modo_interrupcao else 5,
+                    temperature=0,
+                    condition_on_previous_text=False,
+                    no_speech_threshold=0.5 if modo_interrupcao else 0.65,
                     **dicas,
                 )
                 return " ".join(
                     segmento.text.strip() for segmento in segmentos
-                    if getattr(segmento, "no_speech_prob", 0) < 0.5
-                    and getattr(segmento, "avg_logprob", 0) >= -0.8
-                    and getattr(segmento, "compression_ratio", 0) < 2.2
+                    if getattr(segmento, "no_speech_prob", 0) < (0.5 if modo_interrupcao else 0.65)
+                    and getattr(segmento, "avg_logprob", 0) >= (-0.8 if modo_interrupcao else -1.1)
+                    and getattr(segmento, "compression_ratio", 0) < (2.2 if modo_interrupcao else 2.4)
                 ).strip()
             except (RuntimeError, OSError) as erro:
                 if tentativa or getattr(getattr(modelo, "model", None), "device", "cpu") != "cuda":

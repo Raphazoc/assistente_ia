@@ -161,10 +161,13 @@ class RuidoTests(unittest.TestCase):
         with patch.object(voz, "carregar_modelo") as modelo:
             modelo.return_value.transcribe.return_value = (iter([]), None)
             voz.transcrever_audio(np.zeros(16000, dtype=np.float32))
-            self.assertNotIn("hotwords", modelo.return_value.transcribe.call_args.kwargs)
-            self.assertNotIn("initial_prompt", modelo.return_value.transcribe.call_args.kwargs)
+            parametros = modelo.return_value.transcribe.call_args.kwargs
+            self.assertIn("Python", parametros["hotwords"])
+            self.assertNotIn("Aurora", parametros["hotwords"])
+            self.assertEqual(parametros["beam_size"], 5)
             voz.transcrever_audio(np.zeros(16000, dtype=np.float32), modo_interrupcao=True)
             self.assertEqual(modelo.return_value.transcribe.call_args.kwargs["hotwords"], "Aurora")
+            self.assertEqual(modelo.return_value.transcribe.call_args.kwargs["beam_size"], 1)
 
 
 class IntegracaoConversaTests(unittest.TestCase):

@@ -25,11 +25,20 @@ O áudio é reproduzido em um único fluxo, preparando o próximo trecho em
 paralelo. A pontuação é preservada; blocos de código e marcações de formatação
 não são lidos literalmente. No modo de voz, o modelo recebe orientação para
 responder de forma mais breve e conversada.
+As fontes das pesquisas continuam visíveis na resposta em texto, mas a voz
+não lê os links nem a lista de fontes em voz alta.
 
 Se a conexão falhar, o programa usa o modelo Piper já existente e tenta
 o serviço online novamente após um minuto. Se parte da resposta já tiver
 sido falada, a alternativa local recebe somente os trechos restantes.
 Para usar apenas a voz local, defina `USAR_VOZ_ONLINE = False` em `app/fala.py`.
+
+No aplicativo, **Configurações → Voz** permite escolher a voz online padrão (Edge) ou
+ElevenLabs. Para ElevenLabs, informe a chave da API e o ID de uma voz da sua
+conta. O campo de chave vazio mantém a chave já guardada. A chave fica no cofre
+de credenciais do sistema, não no arquivo JSON. O texto limpo da resposta é
+enviado apenas ao provedor de voz escolhido; fontes e links não são narrados.
+Se a API falhar, o Piper local continua disponível como reserva.
 
 ## Microfone e troca de modo
 
@@ -45,7 +54,7 @@ integrado do VS Code. Se estiver usando uma entrada sem terminal, digite
 **"menu"** ou diga **"menu"**.
 
 O microfone agora identifica fala usando o Silero VAD já incluído no
-`faster-whisper`. A gravação termina após aproximadamente **1,1 segundo de
+`faster-whisper`. A gravação termina após aproximadamente **1,5 segundo de
 silêncio** depois da fala, em vez de esperar seis segundos fixos.
 Pausas mais curtas permitem continuar a mesma frase. Isso detecta uma pausa
 na voz; não analisa se a frase está gramaticalmente completa.
@@ -57,11 +66,19 @@ contínua é de 30 segundos, e silêncio sem fala não é enviado ao Whisper.
 Depois de encerrar a gravação, ainda é necessário transcrever o áudio
 e gerar a resposta da IA.
 
-No aplicativo Windows, **Ativar microfone** mantém a escuta ligada até você
-desligá-la. A IA espera o início da fala sem prazo fixo e volta a ouvir após
+No aplicativo Windows, as abas **Texto** e **Voz** mostram áreas separadas.
+Ao selecionar Voz, o microfone é ativado automaticamente. **Mutar microfone**
+pausa a escuta e permanece assim mesmo se você alternar entre as abas; voltar
+para Texto desliga a captura. A IA espera o início da
+fala sem prazo fixo e volta a ouvir após
 cada resposta. Enquanto responde, a escuta normal pausa para evitar que a IA
 transcreva a própria voz; a interrupção por nome continua disponível se estiver
-configurada. O microfone começa desligado ao abrir o aplicativo.
+configurada. O microfone começa desligado ao abrir o aplicativo na aba Texto.
+
+O reconhecimento usa o Whisper `small` com busca mais cuidadosa e dicas para
+nomes técnicos em inglês, como Python, GitHub e VS Code. O modelo pode ser
+baixado na primeira utilização. Se `small` falhar ao carregar, o programa tenta
+`base`. Palavras pronunciadas com sotaque ainda podem exigir confirmação.
 
 ## Conversa e interrupção
 

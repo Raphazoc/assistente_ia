@@ -5,17 +5,23 @@ import json
 import re
 import socket
 import ssl
+import threading
 import time
 import unicodedata
 import zlib
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import zip_longest
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 import certifi
 import httpcore
+from . import diagnostico, servicos
 
 
 CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_internet.json"
@@ -24,6 +30,9 @@ MAX_RESULTADOS = 5
 MAX_PAGINAS = 3
 MAX_BYTES = 700_000
 MAX_CONTEXTO = 5000
+MAX_API_POR_HORA = 30
+_requisicoes_api = deque()
+_trava_api = threading.Lock()
 CONVERSA_SOCIAL_DIRETA = {
     "oi", "ola", "bom dia", "boa tarde", "boa noite", "e ai", "tudo bem",
     "como vai", "como voce esta", "obrigado", "obrigada", "valeu", "ate mais",
@@ -109,10 +118,15 @@ class Fonte:
     url: str
     trecho: str
     pagina_lida: bool = False
+    provedor: str = ""
 
 
 class LeituraIndisponivel(ValueError):
     """Falha de leitura que permite usar somente o resumo já filtrado do buscador."""
+
+
+class FalhaBusca(RuntimeError):
+    """Explicação pública e sem detalhes privados sobre falha dos buscadores."""
 
 
 @dataclass
@@ -120,6 +134,7 @@ class Pesquisa:
     status: str
     mensagem: str = ""
     fontes: list[Fonte] = field(default_factory=list)
+    consultado_em_utc: str = ""
 
     def contexto(self):
         """Converte o resultado filtrado em contexto limitado para o modelo."""
@@ -127,6 +142,7 @@ class Pesquisa:
         for numero, fonte in enumerate(self.fontes, 1):
             registro = {
                 "fonte": numero, "titulo": fonte.titulo[:140], "url": fonte.url,
+                "buscador": fonte.provedor or "não informado",
                 "tipo": "trecho da página" if fonte.pagina_lida else "resumo do buscador; página não lida",
                 "texto": fonte.trecho[:1200],
             }
@@ -135,7 +151,7 @@ class Pesquisa:
             dados.append(registro)
         return json.dumps({
             "status": self.status, "observacao": self.mensagem,
-            "consultado_em_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "consultado_em_utc": self.consultado_em_utc or datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "fontes": dados,
         }, ensure_ascii=False)
 
@@ -181,6 +197,8 @@ def planejar(pergunta, historico, gerar_json):
             return Pesquisa("bloqueada", "Uma consulta proposta foi bloqueada pelos filtros.")
         return PlanoPesquisa(tuple(dict.fromkeys(q.strip() for q in consultas)), str(plano.get("motivo", "Verificar fontes"))[:300])
     except Exception:
+        if forcada and consultas_validas([pedido]) and not pedido_bloqueado(pedido):
+            return PlanoPesquisa((pedido,), "Pesquisa solicitada diretamente; confirmar a consulta antes de enviar.")
         return Pesquisa("falha", "Não foi possível planejar uma pesquisa segura; nenhum buscador foi acessado.")
 
 
@@ -262,9 +280,9 @@ def baixar_html(url):
                 if resposta.status != 200:
                     raise LeituraIndisponivel(f"Página indisponível (HTTP {resposta.status}).")
                 if b"attachment" in cabecalhos.get(b"content-disposition", b"").lower():
-                    raise ValueError("Download não permitido.")
+                    raise LeituraIndisponivel("Esta fonte só oferece um anexo.")
                 if not any(t in cabecalhos.get(b"content-type", b"").lower() for t in (b"text/html", b"text/plain")):
-                    raise ValueError("A fonte não é uma página de texto.")
+                    raise LeituraIndisponivel("A fonte não oferece uma página de texto.")
                 codificacao = cabecalhos.get(b"content-encoding", b"identity").lower()
                 if codificacao not in (b"", b"identity", b"gzip", b"deflate"):
                     raise LeituraIndisponivel("Codificação da página não suportada.")
@@ -303,8 +321,8 @@ def extrair_pagina(html):
     return texto[:12000]
 
 
-def buscar_web(consulta):
-    """Consulta o mecanismo de busca configurado e retorna fontes resumidas."""
+def buscar_duckduckgo(consulta):
+    """Consulta DuckDuckGo com Safe Search estrito."""
     # A versão é fixada porque o payload estrito é imposto explicitamente aqui.
     from ddgs.engines.duckduckgo import Duckduckgo
 
@@ -316,9 +334,71 @@ def buscar_web(consulta):
 
     buscador = DuckduckgoSeguro(timeout=8, verify=True)
     buscador.http_client.client.set_cookies("https://html.duckduckgo.com", {"p": "1"})
-    return [Fonte(r.title, r.href, r.body) for r in (buscador.search(
+    return [Fonte(r.title, r.href, r.body, provedor="DuckDuckGo") for r in (buscador.search(
         consulta, region="br-pt", safesearch="on"
     ) or [])][:MAX_RESULTADOS]
+
+
+def buscar_brave(consulta):
+    """Consulta a API Brave; os filtros locais continuam obrigatórios."""
+    chave = servicos.obter_chave("brave")
+    if not chave:
+        raise ValueError("Chave da API Brave Search não configurada.")
+    with _trava_api:
+        agora = time.monotonic()
+        while _requisicoes_api and agora - _requisicoes_api[0] >= 3600:
+            _requisicoes_api.popleft()
+        if len(_requisicoes_api) >= MAX_API_POR_HORA:
+            raise ValueError("Limite local da API Brave atingido (30 consultas por hora).")
+        _requisicoes_api.append(agora)
+    parametros = urlencode({"q": consulta, "count": MAX_RESULTADOS, "country": "BR",
+                           "search_lang": "pt", "safesearch": "strict"})
+    pedido = Request("https://api.search.brave.com/res/v1/web/search?" + parametros,
+                     headers={"X-Subscription-Token": chave, "Accept": "application/json"})
+    with urlopen(pedido, timeout=10) as resposta:
+        bruto = resposta.read(1_000_001)
+    if len(bruto) > 1_000_000:
+        raise ValueError("Resposta do buscador acima do limite.")
+    dados = json.loads(bruto)
+    resultados = dados.get("web", {}).get("results", [])
+    if not isinstance(resultados, list):
+        raise ValueError("Resposta inválida do buscador.")
+    return [Fonte(str(r.get("title", "")), str(r.get("url", "")),
+                  str(r.get("description", "")), provedor="Brave Search") for r in resultados[:MAX_RESULTADOS]
+            if isinstance(r, dict)]
+
+
+def buscar_web(consulta):
+    """Usa o provedor escolhido somente após a autorização da pesquisa."""
+    if servicos.carregar()["buscador"] != "brave":
+        return buscar_duckduckgo(consulta)
+    falha_brave = None
+    try:
+        resultados = buscar_brave(consulta)
+    except Exception as erro:
+        falha_brave = erro
+        diagnostico.registrar("internet.busca_falhou", erro=erro)
+    else:
+        if resultados:
+            return resultados
+    try:
+        resultados = buscar_duckduckgo(consulta)
+    except Exception as erro_alternativo:
+        diagnostico.registrar("internet.busca_falhou", erro=erro_alternativo)
+        if isinstance(falha_brave, HTTPError) and falha_brave.code in (401, 403):
+            motivo = "A API Brave recusou a chave ou o plano de acesso"
+        elif isinstance(falha_brave, HTTPError) and falha_brave.code == 429:
+            motivo = "A API Brave atingiu o limite de requisições"
+        elif isinstance(falha_brave, ValueError) and "Limite local da API Brave" in str(falha_brave):
+            motivo = "O limite local da API Brave foi atingido"
+        elif isinstance(falha_brave, ValueError) and "Chave da API Brave" in str(falha_brave):
+            motivo = "A chave da API Brave não está configurada"
+        elif falha_brave is None:
+            motivo = "A API Brave não retornou resultados"
+        else:
+            motivo = "A API Brave não respondeu"
+        raise FalhaBusca(motivo + "; DuckDuckGo também está indisponível. Confira a conexão e Configurações → Pesquisa.") from erro_alternativo
+    return resultados
 
 
 def filtrar_fontes(fontes, gerar_json):
@@ -354,13 +434,27 @@ def executar_pesquisa(plano, autorizada, gerar_json):
     if not isinstance(plano, PlanoPesquisa) or not consultas_validas(plano.consultas) or any(pedido_bloqueado(q) for q in plano.consultas):
         return Pesquisa("bloqueada", "Plano bloqueado pela política de pesquisa.")
     encontradas, vistas = [], set()
+    consultado_em_utc = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
-        lotes = [buscar_web(consulta) for consulta in plano.consultas]
+        lotes, falhas = [], 0
+        falha_publica = ""
+        for consulta in plano.consultas:
+            try:
+                lotes.append(buscar_web(consulta))
+            except Exception as erro:
+                falhas += 1
+                if isinstance(erro, FalhaBusca):
+                    falha_publica = str(erro)
+                diagnostico.registrar("internet.busca_falhou", erro=erro)
+        if not lotes and falhas:
+            return Pesquisa("falha", falha_publica or "O buscador não respondeu às consultas autorizadas. Verifique a conexão e o provedor em Configurações → Pesquisa.", consultado_em_utc=consultado_em_utc)
         for grupo in zip_longest(*lotes):
             for fonte in grupo:
                 if fonte is not None and fonte.url not in vistas:
                     vistas.add(fonte.url)
                     encontradas.append(fonte)
+        if not encontradas:
+            return Pesquisa("sem_fontes", "A busca foi autorizada e executada, mas o buscador não retornou resultados para as consultas.", consultado_em_utc=consultado_em_utc)
         seguras = filtrar_fontes(encontradas[:MAX_RESULTADOS], gerar_json)[:MAX_PAGINAS]
         lidas = []
         for fonte in seguras:
@@ -368,20 +462,28 @@ def executar_pesquisa(plano, autorizada, gerar_json):
                 url, html = baixar_html(fonte.url)
                 texto = extrair_pagina(html)
                 if len(texto) < 100:
-                    raise ValueError("Texto da página insuficiente.")
-                lidas.append(Fonte(fonte.titulo, url, texto[:2000], True))
+                    raise LeituraIndisponivel("Texto da página insuficiente.")
+                pagina = Fonte(fonte.titulo, url, texto[:2000], True, fonte.provedor)
+                lidas.extend(filtrar_fontes([pagina], gerar_json))
             except LeituraIndisponivel:
                 lidas.append(fonte)
             except ValueError:
                 continue  # Página bloqueada não é reaproveitada pelo resumo do buscador.
             except (OSError, httpcore.NetworkError, httpcore.ProtocolError, httpcore.TimeoutException):
                 lidas.append(fonte)
-        fontes = filtrar_fontes(lidas, gerar_json)
+        fontes = lidas
         if not fontes:
-            return Pesquisa("sem_fontes", "A busca não forneceu fontes utilizáveis que passassem pelos filtros.")
-        return Pesquisa("concluida", "Pesquisa autorizada, limitada à consulta e leitura das fontes abaixo.", fontes)
-    except Exception:
-        return Pesquisa("falha", "A pesquisa não pôde ser concluída. Não afirme ter verificado informações atuais.")
+            return Pesquisa("sem_fontes", "A busca foi executada, mas nenhuma fonte passou pela leitura e pelos filtros obrigatórios.", consultado_em_utc=consultado_em_utc)
+        aviso = ""
+        if servicos.carregar()["buscador"] == "brave" and any(f.provedor == "DuckDuckGo" for f in fontes):
+            aviso = " A API Brave não retornou resultados utilizáveis; a consulta autorizada usou DuckDuckGo como alternativa."
+        if falhas:
+            aviso += f" {falhas} consulta(s) não puderam ser concluídas."
+        return Pesquisa("concluida", "Pesquisa autorizada, limitada à consulta e leitura das fontes abaixo." + aviso,
+                        fontes, consultado_em_utc)
+    except Exception as erro:
+        diagnostico.registrar("internet.busca_falhou", erro=erro)
+        return Pesquisa("falha", "A pesquisa não pôde ser concluída. Não afirme ter verificado informações atuais.", consultado_em_utc=consultado_em_utc)
 
 
 def preparar(pergunta, historico, gerar_json, pedir_autorizacao):
@@ -405,5 +507,8 @@ def anexar_fontes(resposta, pesquisa):
         titulo = re.sub(r"[\[\]<>\r\n]", " ", fonte.titulo)[:150]
         url = fonte.url.replace(")", "%29")
         tipo = "" if fonte.pagina_lida else " — resumo do buscador"
-        linhas.append(f"{i}. [{titulo}]({url}){tipo}")
-    return resposta.rstrip() + "\n\nFontes consultadas:\n" + "\n".join(linhas)
+        provedor = f" · {fonte.provedor}" if fonte.provedor else ""
+        linhas.append(f"{i}. [{titulo}]({url}){tipo}{provedor}")
+    data = pesquisa.consultado_em_utc or datetime.now(timezone.utc).isoformat(timespec="seconds")
+    aviso = "Buscador alternativo: DuckDuckGo após falha da Brave Search.\n" if "DuckDuckGo como alternativa" in pesquisa.mensagem else ""
+    return resposta.rstrip() + f"\n\nFontes consultadas:\nConsulta em {data}.\n" + aviso + "\n".join(linhas)

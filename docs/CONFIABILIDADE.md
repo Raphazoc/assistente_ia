@@ -44,6 +44,13 @@ etapa, contagens e o **tipo** de erro. Ele não registra perguntas, respostas,
 transcrições, URLs, consultas ou mensagens completas de exceção. Os logs
 e os backups são ignorados pelo Git.
 
+No aplicativo Windows, **Configurações → Diagnóstico** apresenta a versão,
+o estado do Ollama, modelos, dispositivos, voz local, pesquisa e os últimos
+códigos de evento. **Verificar novamente** refaz a checagem e **Copiar
+diagnóstico** prepara um resumo sem conversas, chaves nem nome da conta.
+Se a resposta, o microfone ou a inicialização falharem, a interface sugere
+uma ação concreta e o log registra apenas o tipo técnico da falha.
+
 ## Backup e restauração
 
 O programa faz um backup SQLite validado após abrir o banco e, depois,

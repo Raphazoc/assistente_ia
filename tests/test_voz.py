@@ -28,7 +28,7 @@ class GravadorFraseTests(unittest.TestCase):
         for _ in range(blocos_silencio - 1):
             self.assertFalse(self.gravador.processar(self.bloco, 0.0))
         self.assertTrue(self.gravador.processar(self.bloco, 0.0))
-        self.assertLess(self.gravador.audio().size / voz.TAXA_AMOSTRAGEM, 1.5)
+        self.assertLess(self.gravador.audio().size / voz.TAXA_AMOSTRAGEM, 2.0)
 
     def test_escuta_continua_espera_fala_sem_expirar(self):
         gravador = voz.GravadorFrase(aguardar_fala=True)

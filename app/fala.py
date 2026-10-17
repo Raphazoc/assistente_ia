@@ -1,16 +1,19 @@
 import asyncio
 import io
+import json
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 import emoji
 import sounddevice as sd
 from .controles import InterromperFala, SolicitarMenu, tecla_durante_fala
 from . import diagnostico
+from . import servicos
 
 
 PASTA_PROJETO = Path(__file__).resolve().parent.parent
@@ -49,6 +52,7 @@ def carregar_voz():
 
 def limpar_texto(texto):
     """Preserva a pontuação da fala e remove conteúdo que não deve ser lido."""
+    texto = re.split(r"(?im)^\s*Fontes consultadas:\s*$", texto, maxsplit=1)[0]
     texto = re.sub(r"<think>.*?(?:</think>|$)", "", texto, flags=re.S)
     texto = re.sub(
         r"```.*?(?:```|$)",
@@ -57,8 +61,11 @@ def limpar_texto(texto):
         flags=re.S,
     )
     texto = emoji.replace_emoji(texto, replace="")
+    texto = re.sub(r"\[(?:\d+(?:\s*[,;-]\s*\d+)*)\]\(https?://[^)]+\)", "", texto)
     texto = re.sub(r"!?\[([^\]]+)\]\([^)]+\)", r"\1", texto)
+    texto = re.sub(r"\s*\[(?:\d+(?:\s*[,;-]\s*\d+)*)\](?!\()", "", texto)
     texto = re.sub(r"https?://\S+", "", texto)
+    texto = re.sub(r"\s+([.!?,;:])", r"\1", texto)
     texto = re.sub(r"(?m)^\s*(?:#{1,6}\s+|[-*+>]\s+|\d+[.)]\s+)", "", texto)
     texto = re.sub(r"[*`#_]", "", texto)
     texto = re.sub(r"(?m)^\s*[-=]{3,}\s*$", "", texto)
@@ -121,6 +128,32 @@ def gerar_audio_online(texto):
     if not mp3:
         raise RuntimeError("O serviço de voz não retornou áudio.")
 
+    return decodificar_mp3(mp3)
+
+
+def gerar_audio_elevenlabs(texto):
+    """Solicita áudio à voz configurada na ElevenLabs."""
+    opcoes = servicos.carregar()
+    identificador = opcoes["voice_id"]
+    chave = servicos.obter_chave("elevenlabs")
+    if not identificador or not chave:
+        raise ValueError("Configure a chave e o ID da voz ElevenLabs.")
+    pedido = Request(
+        f"https://api.elevenlabs.io/v1/text-to-speech/{identificador}?output_format=mp3_44100_128",
+        data=json.dumps({"text": texto, "model_id": "eleven_multilingual_v2"}).encode("utf-8"),
+        headers={"xi-api-key": chave, "Content-Type": "application/json", "Accept": "audio/mpeg"},
+        method="POST",
+    )
+    with urlopen(pedido, timeout=15) as resposta:
+        mp3 = resposta.read(6_000_001)
+    if not mp3 or len(mp3) > 6_000_000:
+        raise ValueError("A API de voz retornou áudio vazio ou acima do limite.")
+    return decodificar_mp3(mp3)
+
+
+def decodificar_mp3(mp3):
+    """Converte MP3 recebido dos provedores em PCM para a saída de áudio."""
+
     conversor = av.AudioResampler(format="s16", layout="mono", rate=TAXA_AUDIO_ONLINE)
     partes = []
     with av.open(io.BytesIO(mp3), format="mp3") as arquivo:
@@ -179,13 +212,14 @@ def escrever_audio(saida, audio, taxa, controle):
         raise
 
 
-def falar_online(texto, controle=None):
+def falar_online(texto, controle=None, gerar=None):
     """Reproduz texto usando a voz online com preparação antecipada dos trechos."""
     trechos = dividir_texto(texto)
     if not trechos:
         return
+    gerar = gerar or gerar_audio_online
     with executor_audio() as executor:
-        proximo = executor.submit(gerar_audio_online, trechos[0])
+        proximo = executor.submit(gerar, trechos[0])
         # Só abre o dispositivo depois de obter o primeiro áudio válido.
         try:
             audio = aguardar_audio(proximo, controle)
@@ -209,7 +243,7 @@ def falar_online(texto, controle=None):
                         raise FalhaVozOnline(pendente, erro) from erro
                 if indice + 1 < len(trechos):
                     # Gera o próximo trecho enquanto o atual está tocando.
-                    proximo = executor.submit(gerar_audio_online, trechos[indice + 1])
+                    proximo = executor.submit(gerar, trechos[indice + 1])
                 escrever_audio(saida, audio, TAXA_AUDIO_ONLINE, controle)
 
 
@@ -261,7 +295,9 @@ def _falar(texto, controle=None):
     print("\nIA está falando...")
     if USAR_VOZ_ONLINE and time.monotonic() >= _online_indisponivel_ate:
         try:
-            if controle is None:
+            if servicos.carregar()["voz"] == "elevenlabs":
+                falar_online(texto, controle=controle, gerar=gerar_audio_elevenlabs)
+            elif controle is None:
                 falar_online(texto)
             else:
                 falar_online(texto, controle=controle)

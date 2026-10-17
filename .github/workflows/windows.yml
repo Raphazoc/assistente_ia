@@ -1,0 +1,74 @@
+name: Testes e instalador Windows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Instalar dependências
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+      - name: Executar testes
+        shell: pwsh
+        run: .\.venv\Scripts\python.exe -m unittest discover -s tests -q
+
+  instalador:
+    if: github.event_name != 'pull_request'
+    needs: testes
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Instalar dependências
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+      - name: Conferir versão da tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $versao = (& .\.venv\Scripts\python.exe -c 'from app.versao import VERSAO; print(VERSAO)').Trim()
+          if ($env:GITHUB_REF_NAME -ne "v$versao") { throw 'A tag não corresponde à versão do aplicativo.' }
+      - name: Gerar instalador e SHA-256
+        shell: pwsh
+        run: .\installer\build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assistente-ia-windows
+          path: |
+            dist-installer/AssistenteIA-Setup.exe
+            dist-installer/AssistenteIA-Setup.exe.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  testar_instalacao:
+    needs: instalador
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: assistente-ia-windows
+          path: dist-installer
+      - name: Instalar, abrir e desinstalar
+        shell: pwsh
+        run: .\installer\test_install.ps1 -Instalador .\dist-installer\AssistenteIA-Setup.exe

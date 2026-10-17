@@ -29,6 +29,31 @@ A assistente também identifica algumas afirmações pessoais estáveis em
 primeira pessoa e guarda o texto original do usuário. Essa seleção é
 conservadora: nem todo fato importante será reconhecido automaticamente.
 
+No aplicativo Windows, o botão **Memória** abre um gerenciador visual. A aba
+**Lembranças** separa fatos e preferências, filtra por texto, assunto ou
+projeto e permite criar, editar ou excluir cada item. Ao selecionar uma
+lembrança, a tela mostra quantas mensagens a originaram e em quantas respostas
+registradas ela foi usada. A escolha em cada resposta também depende da
+pergunta, do contexto ativo, da importância e da similaridade.
+
+A aba **Histórico** mostra as mensagens salvas separadamente das lembranças.
+**Não usar esta troca na memória** mantém a mensagem visível, mas retira a
+troca e as lembranças associadas da recuperação futura. A aba **Resumos**
+permite consultar os resumos já criados. Documentos ainda não são importados
+para essa memória; arquivos lidos em ações locais não viram lembranças por
+conta própria.
+
+O controle **Memória ativa** desliga ou religa a recuperação e a extração
+automática de fatos. Com ele desligado, o histórico da conversa continua
+sendo salvo para consulta, mas as novas mensagens são marcadas para não
+entrar na memória de longo prazo. A conversa da sessão atual ainda tem
+contexto enquanto o aplicativo está aberto.
+
+Na aba Texto, marque **Não salvar esta troca** antes de enviar uma mensagem
+particular. A pergunta e a resposta aparecem na janela, mas não são gravadas
+no banco nem reutilizadas como contexto nas próximas respostas. A opção volta
+a ficar desmarcada após o envio.
+
 ## Assuntos, projetos e seleção
 
 Defina o assunto e o projeto antes de conversar sobre eles. Lembranças
@@ -64,6 +89,11 @@ O arquivo de conversas no SQLite pode manter as mensagens originais para
 consulta do histórico. Portanto, excluir uma lembrança não equivale a apagar
 definitivamente todos os vestígios do texto: o histórico e cópias de
 segurança podem continuar contendo esses dados.
+
+O botão **Apagar toda a memória** remove lembranças, histórico, vetores e
+resumos do banco ativo após confirmação. Marque **Incluir backups** se também
+quiser excluir as cópias gerenciadas pelo aplicativo. Cópias feitas fora da
+pasta de backups do aplicativo não são localizadas por esse botão.
 
 ## Uso por voz
 

@@ -94,6 +94,17 @@ class ConfiabilidadeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             diagnostico.registrar("meu_segredo_abc123")
 
+    def test_eventos_recentes_descartam_conteudo_estranho_do_log(self):
+        diagnostico.encerrar()
+        diagnostico.registrar("ollama.resposta.falha", erro=RuntimeError("senha=abc123"))
+        diagnostico.encerrar()
+        caminho = diagnostico.PASTA_LOGS / "assistente.log"
+        with caminho.open("a", encoding="utf-8") as arquivo:
+            arquivo.write('{"hora_utc":"2026-01-01T12:00:00+00:00","evento":"senha=abc123"}\n')
+        recentes = diagnostico.eventos_recentes()
+        self.assertEqual(recentes[0][1], "ollama.resposta.falha")
+        self.assertNotIn("abc123", repr(recentes))
+
     def test_ollama_tenta_uma_vez_mais_apos_falha_transitoria(self):
         funcao = Mock(side_effect=[httpx.ConnectError("segredo=abc123"), {"message": {"content": "ok"}}])
         with patch.object(main.time, "sleep") as pausa:

@@ -37,6 +37,47 @@ class FalaTests(unittest.TestCase):
             "O código está disponível na resposta em texto.",
         )
 
+    def test_negrito_some_da_prosa_sem_alterar_codigo(self):
+        texto = "Isso é **natural**.\n```python\nx = 2 ** 3\n```"
+        self.assertEqual(main.remover_negrito(texto), "Isso é natural.\n```python\nx = 2 ** 3\n```")
+
+    def test_fontes_permanecem_na_resposta_mas_nao_sao_narradas(self):
+        resposta = (
+            "A versão atual é esta [1]. Veja também [2](https://exemplo.org/nota).\n\n"
+            "Fontes consultadas:\n"
+            "[1] Documentação oficial — https://exemplo.org/docs\n"
+            "[2] Nota de lançamento — https://exemplo.org/nota"
+        )
+        falado = fala.limpar_texto(resposta)
+        self.assertEqual(falado, "A versão atual é esta. Veja também.")
+        self.assertIn("Fontes consultadas:", resposta)
+        self.assertNotIn("https://", falado)
+
+    def test_elevenlabs_recebe_apenas_texto_limpo_e_id_configurado(self):
+        resposta = MagicMock()
+        resposta.read.return_value = b"mp3"
+        contexto = MagicMock()
+        contexto.__enter__.return_value = resposta
+        with patch.object(fala.servicos, "carregar", return_value={"voz": "elevenlabs", "voice_id": "voz123"}), \
+             patch.object(fala.servicos, "obter_chave", return_value="chave"), \
+             patch.object(fala, "urlopen", return_value=contexto) as abrir, \
+             patch.object(fala, "decodificar_mp3", return_value=b"pcm"):
+            audio = fala.gerar_audio_elevenlabs(fala.limpar_texto("Resposta **natural**.\n\nFontes consultadas:\n1. fonte"))
+        pedido = abrir.call_args.args[0]
+        self.assertEqual(audio, b"pcm")
+        self.assertIn("/voz123?", pedido.full_url)
+        self.assertEqual(pedido.get_header("Xi-api-key"), "chave")
+        self.assertIn('"text": "Resposta natural."', pedido.data.decode())
+        self.assertNotIn("Fontes", pedido.data.decode())
+
+    def test_seletor_de_voz_usa_elevenlabs_quando_configurada(self):
+        with patch.object(fala.servicos, "carregar", return_value={"voz": "elevenlabs", "voice_id": "voz123"}), \
+             patch.object(fala, "_online_indisponivel_ate", 0), \
+             patch.object(fala, "falar_online") as online:
+            fala.falar("Olá **amigo**.")
+        self.assertEqual(online.call_args.args, ("Olá amigo.",))
+        self.assertIs(online.call_args.kwargs["gerar"], fala.gerar_audio_elevenlabs)
+
     def test_divisao_preserva_texto_e_prioriza_pausas(self):
         texto = " ".join([
             "Podemos conversar com calma e continuar o projeto aos poucos."

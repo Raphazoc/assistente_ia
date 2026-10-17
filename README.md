@@ -1,10 +1,7 @@
 # Assistente Pessoal Local com IA
 
-> **Status: Beta em testes.** A vers?o atual ? identificada como `v0.1b`,
-> em que o `b` significa **Beta**. O projeto ainda est? em valida??o e pode
-> apresentar comportamentos inesperados, altera??es de funcionalidade ou
-> incompatibilidades antes de uma vers?o est?vel.
-
+> **Status: Beta em testes.** Versão do aplicativo: `v0.5.3`. O projeto ainda
+> está em validação e pode mudar antes de uma versão estável.
 
 Assistente pessoal em Python, desenvolvido para conversar em português
 brasileiro, preservar memória entre sessões e alternar entre interação por
@@ -77,31 +74,116 @@ O cliente Ollama é configurado para `http://127.0.0.1:11434`. Assim, as
 conversas não são enviadas para outro host por uma configuração remota
 acidental do cliente.
 
-## Requisitos
+## Requisitos mínimos
 
-### Requisitos gerais
+====================================================
+### Configuração Local usada para criar e testar o projeto.
 
-- Windows para todos os recursos, incluindo a interface desktop e os atalhos
-  de teclado. O modo terminal foi escrito para também funcionar em Linux e
-  macOS, desde que os recursos dependentes do sistema estejam disponíveis.
-- Python 3.9 ou superior.
-- Git, caso o projeto seja obtido por clone.
-- Ollama instalado e em execução.
-- Espaço em disco para os modelos de IA.
-- Microfone e saída de áudio para usar os modos de voz.
+Processador (CPU)	Intel Core i5-10400F - 2,90 GHz
+Placa de vídeo (GPU)	NVIDIA GeForce RTX 3060 - GPU (VRAM)	12 GB
+Memória RAM	32 GB DDR4 - 3200MHz
 
-O modo texto depende apenas do Python, das dependências do projeto e do
-Ollama. O modo de voz exige dependências adicionais e pode exigir configuração
-específica do dispositivo de áudio ou de aceleração por GPU.
+====================================================
 
-### Hardware
 
-O modo texto pode funcionar em máquinas mais simples, dependendo do modelo
-escolhido. O modelo padrão `qwen3:8b`, embeddings, transcrição e síntese de
-voz consomem mais memória e podem se beneficiar de uma GPU compatível.
+### Sistema operacional
 
-Se a GPU não estiver disponível para a transcrição, o código tenta usar a CPU
-quando possível. O desempenho dependerá do hardware e da configuração local.
+- Windows 10 ou Windows 11, 64 bits.
+- O modo desktop e o instalador foram preparados para Windows.
+- O modo terminal pode funcionar em Linux ou macOS, mas o foco principal é
+  Windows.
+
+### Hardware mínimo recomendado
+
+- **Processador:** 4 núcleos.
+- **Memória RAM:** 8 GB no mínimo; 16 GB recomendado.
+- **Armazenamento:** pelo menos 15 GB livres.
+- **Microfone e alto-falantes:** necessários somente para os recursos de voz.
+- **GPU:** opcional. O reconhecimento de voz pode funcionar pela CPU, mas
+  ficará mais lento.
+
+### Dependências obrigatórias
+
+Para executar o código-fonte:
+
+- Python 3.13 ou superior;
+- Ambiente virtual recomendado;
+- Ollama instalado e em execução;
+- Modelo principal `qwen3:8b`;
+- Modelo de embeddings `qwen3-embedding:0.6b`.
+
+Instale os modelos com:
+
+```powershell
+ollama pull qwen3:8b
+ollama pull qwen3-embedding:0.6b
+```
+
+### Recursos de voz
+
+Para usar microfone e síntese de fala:
+
+- Microfone funcional;
+- Saída de áudio;
+- Drivers de áudio instalados;
+- Dependências de `requirements-voz.txt`;
+- Modelo local Piper:
+
+```text
+resources\vozes\pt_BR-faber-medium.onnx
+```
+
+O Faster-Whisper pode utilizar a CPU. Uma GPU compatível pode acelerar a
+transcrição.
+
+### Internet
+
+A internet não é necessária para:
+
+- Conversar usando o Ollama local;
+- Usar a memória local;
+- Usar o banco SQLite;
+- Usar a voz local Piper;
+- Executar ações locais.
+
+A internet é necessária ou recomendada para:
+
+- Baixar dependências e modelos;
+- Usar a pesquisa online;
+- Usar a voz neural Edge-TTS;
+- Baixar atualizações;
+- Baixar alguns modelos de reconhecimento no primeiro uso.
+
+### Uso do instalador
+
+Quem usar o instalador não precisa instalar Python nem PyInstaller, pois o
+aplicativo e suas dependências já estarão empacotados.
+
+Ainda será necessário instalar separadamente:
+
+- Ollama;
+- `qwen3:8b`;
+- `qwen3-embedding:0.6b`.
+
+### Resumo
+
+| Item | Requisito mínimo |
+| --- | --- |
+| Sistema | Windows 10/11, 64 bits |
+| Processador | 4 núcleos |
+| Memória RAM | 8 GB |
+| Memória recomendada | 16 GB |
+| Armazenamento livre | 15 GB |
+| GPU | Opcional |
+| Python | 3.13 ou superior, para executar o código-fonte |
+| Ollama | Obrigatório |
+| Microfone | Opcional, somente para voz |
+| Internet | Opcional para uso local |
+
+Para uma experiência mais confortável com o modelo `qwen3:8b`, voz e memória
+semântica simultaneamente, recomenda-se 16 GB de RAM, SSD e uma GPU compatível.
+A GPU não é obrigatória.
+
 
 ## Instalação
 
@@ -163,14 +245,22 @@ Teste a instalação:
 ollama list
 ```
 
-Os nomes dos modelos precisam corresponder às constantes definidas em
-`main.py`. Se você optar por outros modelos, altere `MODELO` e
-`MODELO_MEMORIA` de acordo com os modelos instalados.
+Os nomes dos modelos podem ser escolhidos na primeira execução ou em
+**Configurações → Geral**, entre os modelos instalados no Ollama.
 
 ## Executando
 
 Para usar a janela Windows instalável, veja [INSTALACAO.md](INSTALACAO.md).
-Ela mostra Escrita e Áudio em dois painéis lado a lado, sem sobreposição.
+Na primeira abertura, siga o [guia de configuração](docs/PRIMEIRA_EXECUCAO.md)
+para verificar o Ollama, escolher modelos e testar o áudio.
+Depois, use **Configurações** para ajustar modelos, idioma, histórico,
+pesquisa e voz na mesma janela, além de consultar o diagnóstico.
+Ela tem abas separadas para Texto e Voz: a conversa escrita ocupa a área
+principal, e a aba Voz mostra a escuta, seus controles e a transcrição.
+O botão **Memória** abre o gerenciamento visual de lembranças, histórico e
+resumos. Na escrita, **Não salvar esta troca** evita gravar aquela pergunta e
+resposta. Exemplos em blocos Markdown aparecem com fonte monoespaçada, cores
+de sintaxe e comando para copiar o código.
 
 Na raiz do projeto, com o ambiente virtual ativado:
 
@@ -212,7 +302,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1
 ```
 
 O script gera `dist\AssistenteIA\AssistenteIA.exe` e, quando o Inno Setup
-está instalado, `dist-installer\AssistenteIA-Setup.exe`. Para gerar somente a
+está instalado, `dist-installer\AssistenteIA-Setup.exe` e seu arquivo `.sha256`.
+O [workflow Windows](.github/workflows/windows.yml) executa testes, gera os
+arquivos e testa instalação/desinstalação em outro runner antes de disponibilizar
+o artefato. Para gerar somente a
 pasta executável:
 
 ```powershell
@@ -286,6 +379,8 @@ deve ser versionado. A memória possui:
 - Busca textual e recuperação semântica.
 - Resumos de conversas extensas.
 - Exclusão e edição com remoção das associações antigas de contexto.
+- Gerenciador visual para filtrar fatos e preferências, consultar uso e origem,
+  desligar a memória e apagar dados após confirmação.
 
 Para separar contextos, por exemplo:
 
@@ -319,13 +414,19 @@ habilitada, cada consulta exige autorização explícita. A pesquisa:
 - Aceita apenas URLs HTTP/HTTPS públicas.
 - Bloqueia endereços locais, portas não permitidas e fontes adultas.
 - Trata o conteúdo das páginas como dado não confiável.
-- Anexa fontes e horário da consulta à resposta quando a pesquisa é concluída.
+- Anexa fontes, buscador utilizado e horário da consulta à resposta quando a pesquisa é concluída.
+- Permite abrir a fonte original pelo título na interface desktop; os links não são falados.
 
 Para solicitar uma consulta diretamente, use:
 
 ```text
 /pesquisar versão atual do Python
 ```
+
+Em **Configurações → Pesquisa**, é possível escolher Brave Search e guardar a
+chave no cofre de credenciais do sistema. Quando a API falha, a assistente tenta
+DuckDuckGo com a mesma consulta autorizada e informa qual buscador encontrou as
+fontes. Os filtros de conteúdo e a autorização por pesquisa continuam ativos.
 
 Não habilite esse recurso se o objetivo for executar o programa totalmente
 offline. A geração da resposta e a memória permanecem locais, mas o recurso
@@ -441,6 +542,8 @@ Os testes ficam em `tests/` e cobrem, entre outros pontos:
 - Memória e comandos persistentes.
 - Síntese e limpeza de texto para fala.
 - Filtros e planejamento de pesquisa.
+- Inicialização, falhas e recuperação entre interface, banco, Ollama e pesquisa
+  ([cenários de integração](docs/TESTES_INTEGRACAO.md)).
 - Confiabilidade, backups e diagnósticos.
 
 Para executar um arquivo específico:

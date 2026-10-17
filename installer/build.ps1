@@ -6,9 +6,18 @@ $pythonProjeto = Join-Path $raizProjeto '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $pythonProjeto)) {
     throw 'Crie o ambiente .venv e instale requirements.txt antes de empacotar.'
 }
+$scriptInstalador = Join-Path $raizProjeto 'installer\AssistenteIA.iss'
 
 Push-Location -LiteralPath $raizProjeto
 try {
+    $versaoCodigo = (& $pythonProjeto -c 'from app.versao import VERSAO; print(VERSAO)').Trim()
+    if ($LASTEXITCODE -ne 0) { throw 'Não foi possível ler a versão do aplicativo.' }
+    $versaoInstalador = [regex]::Match(
+        [IO.File]::ReadAllText($scriptInstalador), '(?m)^AppVersion=([^\r\n]+)'
+    ).Groups[1].Value.Trim()
+    if ($versaoCodigo -ne $versaoInstalador) {
+        throw "Versões diferentes: aplicativo $versaoCodigo e instalador $versaoInstalador."
+    }
     & $pythonProjeto -m pip install -r requirements-build.txt
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar PyInstaller.' }
     & $pythonProjeto -m PyInstaller --noconfirm --clean AssistenteIA.spec
@@ -34,9 +43,15 @@ try {
     if (-not $compilador) {
         throw 'Inno Setup não encontrado. Instale Inno Setup 6 ou 7 e execute este script novamente.'
     }
-    & $compilador (Join-Path $raizProjeto 'installer\AssistenteIA.iss')
+    & $compilador $scriptInstalador
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar o instalador.' }
-    Write-Host (Join-Path $raizProjeto 'dist-installer\AssistenteIA-Setup.exe')
+    $instalador = Join-Path $raizProjeto 'dist-installer\AssistenteIA-Setup.exe'
+    if (-not (Test-Path -LiteralPath $instalador)) { throw 'Instalador não encontrado após a compilação.' }
+    $sha256 = (Get-FileHash -LiteralPath $instalador -Algorithm SHA256).Hash.ToLowerInvariant()
+    $manifesto = "$instalador.sha256"
+    Set-Content -LiteralPath $manifesto -Value "$sha256  AssistenteIA-Setup.exe" -Encoding ascii
+    Write-Host $instalador
+    Write-Host "SHA-256: $sha256"
 }
 finally {
     Pop-Location

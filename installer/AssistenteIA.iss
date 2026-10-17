@@ -1,7 +1,7 @@
 [Setup]
 AppId={{6C479E2C-7C41-48B9-84B3-F26814F15727}
 AppName=Assistente IA
-AppVersion=0.2.0
+AppVersion=0.5.3
 DefaultDirName={localappdata}\Programs\AssistenteIA
 DefaultGroupName=Assistente IA
 PrivilegesRequired=lowest

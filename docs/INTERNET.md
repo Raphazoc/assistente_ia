@@ -38,15 +38,39 @@ A escolha é salva nas configurações do aplicativo e vale nas próximas abertu
 Desligar a pesquisa impede o acesso ao buscador; ligar novamente mantém a
 autorização individual antes de cada busca.
 
+Em **Configurações → Pesquisa**, escolha DuckDuckGo (padrão) ou Brave Search. Para usar Brave,
+cole sua chave da API no campo **Nova chave Brave** e salve. O campo vazio mantém
+a chave anterior. A chave fica no cofre de credenciais do sistema, fora do JSON
+de configurações. A consulta só é enviada ao provedor escolhido depois da
+autorização individual. A confirmação mostra o buscador principal e a possível
+alternativa. Brave recebe `safesearch=strict`, conforme a
+[documentação da API](https://api-dashboard.search.brave.com/app/documentation/web-search);
+DuckDuckGo continua
+com Safe Search estrito. A classificação local, o filtro +18, a validação das
+URLs e os limites de leitura valem igualmente para ambos os provedores.
+O aplicativo limita a API Brave a 30 consultas por hora por execução. Se a API
+falhar ou não retornar resultados, tenta a pesquisa atual com DuckDuckGo usando
+a mesma consulta autorizada e os mesmos filtros. Se ambos falharem, mostra a
+limitação em vez de alegar que encontrou fontes.
+
 Cada autorização cobre somente as consultas exibidas, no máximo duas, e a
 leitura de até três fontes públicas de texto retornadas por elas. O programa
 não segue links das páginas para ampliar a pesquisa. Se precisar de outra
 pesquisa, faça um novo pedido e confirme novamente.
 
-Os links efetivamente consultados aparecem ao final da resposta no terminal.
-Quando uma página não pôde ser lida e foi usado apenas o resumo do buscador,
+Os links efetivamente consultados aparecem ao final da resposta no terminal ou
+na aba correspondente do aplicativo; no aplicativo, clique no título da fonte
+para abrir a página no navegador. Cada fonte informa o buscador que a encontrou,
+se a página foi lida ou se apenas o resumo foi usado, e a hora da consulta em UTC.
+Quando a Brave falha e o DuckDuckGo é usado, a troca aparece junto das fontes.
+Na conversa por voz, os links ficam visíveis,
+mas não são narrados.
+Quando uma página não pôde ser lida e foi usado apenas o resumo já filtrado do buscador,
 a fonte recebe essa indicação. A data de consulta não é a data de publicação.
-Se não houver fontes utilizáveis, o programa informa a limitação.
+Uma página marcada como adulta continua descartada, mesmo que o resumo pareça
+seguro. Se uma consulta falhar, as outras fontes autorizadas ainda podem ser
+usadas. Se não houver resultados, o programa informa que a busca foi feita,
+mas não encontrou fontes utilizáveis.
 
 ## Restrições
 
@@ -62,8 +86,11 @@ marcações de página adulta e usa o modelo local para classificar as fontes.
 Pedidos explícitos de instruções para roubo de credenciais, invasão, malware,
 explosivos, golpes ou fraude também são bloqueados. O modelo local decide se
 uma pergunta precisa de pesquisa, mas uma negativa genérica do planejamento
-não bloqueia por si só um pedido comum. Se o planejamento ou a classificação
-de fontes falhar, a etapa correspondente não é liberada.
+não bloqueia por si só um pedido comum. Se o planejamento de uma pergunta comum
+ou a classificação de fontes falhar, a etapa correspondente não é liberada.
+No comando explícito `/pesquisar`, uma falha do planejador local usa o próprio
+assunto digitado como consulta somente se passar pelas validações; a autorização
+individual ainda é obrigatória.
 
 Os filtros são obrigatórios e não têm opção de desligar. Eles reduzem o risco,
 mas não garantem detectar todo conteúdo impróprio; o modelo pode errar e
@@ -81,7 +108,8 @@ salva arquivos baixados. Os bytes das páginas são lidos apenas para extrair te
 
 O planejamento e a classificação usam o Ollama local. Antes da autorização,
 nenhuma consulta de pesquisa é enviada ao buscador. Após autorizar, as
-consultas exibidas são enviadas ao DuckDuckGo, e os sites das fontes recebem
+consultas exibidas são enviadas ao buscador selecionado (e ao DuckDuckGo se
+Brave estiver selecionado mas falhar), e os sites das fontes recebem
 as requisições de leitura, incluindo seu IP de rede. Confira o texto das
 consultas antes de aprovar: ele pode conter detalhes do pedido.
 

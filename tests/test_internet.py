@@ -1,10 +1,12 @@
 import contextlib
 import gzip
 import io
+import json
 import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from urllib.error import HTTPError
 from unittest.mock import Mock, patch
 
 import httpcore
@@ -106,6 +108,23 @@ class InternetTests(unittest.TestCase):
         self.assertEqual(internet.preparar("Pesquise Python", [], modelo, autorizar).status, "falha")
         autorizar.assert_not_called()
 
+    def test_pesquisa_direta_com_planejador_indisponivel_ainda_exige_autorizacao(self):
+        modelo = Mock(side_effect=ValueError("JSON inválido"))
+        autorizar = Mock(return_value=False)
+        with patch.object(internet, "buscar_web") as buscar:
+            resultado = internet.preparar("/pesquisar documentação oficial do Python", [], modelo, autorizar)
+        self.assertEqual(resultado.status, "negada")
+        self.assertEqual(autorizar.call_args.args[0].consultas, ("documentação oficial do Python",))
+        buscar.assert_not_called()
+
+    def test_pesquisa_direta_invalida_nao_contorna_filtros(self):
+        autorizar = Mock()
+        with patch.object(internet, "buscar_web") as buscar:
+            resultado = internet.preparar("/pesquisar xxx", [], Mock(side_effect=ValueError()), autorizar)
+        self.assertEqual(resultado.status, "bloqueada")
+        autorizar.assert_not_called()
+        buscar.assert_not_called()
+
     def test_pesquisa_desativada_nao_planeja_solicita_ou_acessa_rede(self):
         internet.definir_habilitada(False)
         modelo, autorizar = Mock(), Mock()
@@ -200,6 +219,100 @@ class InternetTests(unittest.TestCase):
             internet.buscar_web("Python")
         self.assertEqual(coletado["kp"], "1")
         cliente.set_cookies.assert_called_once_with("https://html.duckduckgo.com", {"p": "1"})
+
+    def test_brave_exige_chave_e_safe_search_estrito(self):
+        from urllib.parse import parse_qs, urlsplit
+        resposta = Mock()
+        resposta.read.return_value = json.dumps({"web": {"results": [{
+            "title": "Python", "url": self.fonte.url, "description": "Documentação oficial"
+        }]}}).encode()
+        contexto = Mock()
+        contexto.__enter__ = Mock(return_value=resposta)
+        contexto.__exit__ = Mock(return_value=False)
+        with patch.object(internet.servicos, "obter_chave", return_value="chave"), \
+             patch.object(internet, "urlopen", return_value=contexto) as abrir:
+            fontes = internet.buscar_brave("Python documentação")
+        pedido = abrir.call_args.args[0]
+        parametros = parse_qs(urlsplit(pedido.full_url).query)
+        self.assertEqual(parametros["safesearch"], ["strict"])
+        self.assertEqual(parametros["q"], ["Python documentação"])
+        self.assertEqual(pedido.get_header("X-subscription-token"), "chave")
+        self.assertEqual(fontes[0].url, self.fonte.url)
+
+    def test_api_falha_e_busca_atual_e_usada_com_mesma_consulta(self):
+        with patch.object(internet.servicos, "carregar", return_value={"buscador": "brave"}), \
+             patch.object(internet, "buscar_brave", side_effect=OSError("API fora")), \
+             patch.object(internet, "buscar_duckduckgo", return_value=[self.fonte]) as alternativa:
+            fontes = internet.buscar_web("Python documentação")
+        self.assertEqual(fontes, [self.fonte])
+        alternativa.assert_called_once_with("Python documentação")
+
+    def test_resposta_identifica_provedor_alternativo_e_data_sem_chave(self):
+        fonte = internet.Fonte(self.fonte.titulo, self.fonte.url, self.fonte.trecho,
+                               provedor="DuckDuckGo")
+        with (
+            patch.object(internet.servicos, "carregar", return_value={"buscador": "brave"}),
+            patch.object(internet, "buscar_web", return_value=[fonte]),
+            patch.object(internet, "baixar_html", side_effect=internet.LeituraIndisponivel("HTTP 403")),
+        ):
+            resultado = internet.executar_pesquisa(self.plano, True, self.permitir_lote)
+        self.assertEqual(resultado.status, "concluida")
+        self.assertIn("DuckDuckGo como alternativa", resultado.mensagem)
+        self.assertTrue(resultado.consultado_em_utc)
+        self.assertIn('"buscador": "DuckDuckGo"', resultado.contexto())
+        texto = internet.anexar_fontes("Resposta [1].", resultado)
+        self.assertIn("Consulta em " + resultado.consultado_em_utc, texto)
+        self.assertIn("resumo do buscador · DuckDuckGo", texto)
+
+    def test_falha_de_ambos_provedores_mostra_erro_util_sem_expor_chave(self):
+        with (
+            patch.object(internet.servicos, "carregar", return_value={"buscador": "brave"}),
+            patch.object(internet, "buscar_brave", side_effect=HTTPError("https://api.search.brave.com", 401, "recusada", {}, None)),
+            patch.object(internet, "buscar_duckduckgo", side_effect=OSError("sem rede")),
+        ):
+            resultado = internet.executar_pesquisa(self.plano, True, self.permitir_lote)
+        self.assertEqual(resultado.status, "falha")
+        self.assertIn("recusou a chave", resultado.mensagem)
+        self.assertIn("DuckDuckGo", resultado.mensagem)
+        self.assertNotIn("https://", resultado.mensagem)
+
+    def test_limite_local_da_api_impede_requisicao_extra(self):
+        internet._requisicoes_api.clear()
+        try:
+            internet._requisicoes_api.extend([100.0] * internet.MAX_API_POR_HORA)
+            with patch.object(internet.servicos, "obter_chave", return_value="chave"), \
+                 patch.object(internet.time, "monotonic", return_value=100.0), \
+                 patch.object(internet, "urlopen") as abrir:
+                with self.assertRaisesRegex(ValueError, "Limite local"):
+                    internet.buscar_brave("Python")
+            abrir.assert_not_called()
+        finally:
+            internet._requisicoes_api.clear()
+
+    def test_falha_de_uma_consulta_nao_apaga_outra(self):
+        plano = internet.PlanoPesquisa(("consulta um", "consulta dois"), "Teste")
+        with patch.object(internet, "buscar_web", side_effect=[RuntimeError("sem rede"), [self.fonte]]), \
+             patch.object(internet, "baixar_html", side_effect=internet.LeituraIndisponivel("HTTP 403")):
+            resultado = internet.executar_pesquisa(plano, True, self.permitir_lote)
+        self.assertEqual(resultado.status, "concluida")
+        self.assertEqual(resultado.fontes, [self.fonte])
+
+    def test_busca_autorizada_sem_resultado_nao_e_tratada_como_negada(self):
+        with patch.object(internet, "buscar_web", return_value=[]):
+            resultado = internet.executar_pesquisa(self.plano, True, self.permitir_lote)
+        self.assertEqual(resultado.status, "sem_fontes")
+        self.assertIn("autorizada e executada", resultado.mensagem)
+
+    def test_site_inacessivel_preserva_resumo_seguro_mas_pagina_adulta_nao(self):
+        with patch.object(internet, "buscar_web", return_value=[self.fonte]), \
+             patch.object(internet, "baixar_html", side_effect=internet.LeituraIndisponivel("HTTP 403")):
+            resultado = internet.executar_pesquisa(self.plano, True, self.permitir_lote)
+        self.assertEqual(resultado.status, "concluida")
+        self.assertFalse(resultado.fontes[0].pagina_lida)
+        with patch.object(internet, "buscar_web", return_value=[self.fonte]), \
+             patch.object(internet, "baixar_html", return_value=(self.fonte.url, b"<main>pornografia</main>")):
+            bloqueado = internet.executar_pesquisa(self.plano, True, self.permitir_lote)
+        self.assertEqual(bloqueado.status, "sem_fontes")
 
     def test_resultado_adulto_e_removido_antes_de_abrir_a_pagina(self):
         adulto = internet.Fonte("Vídeos adultos", "https://site.example/", "material adulto")

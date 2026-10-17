@@ -15,16 +15,19 @@ _trava = threading.RLock()
 EVENTOS = {
     "acoes.executada", "acoes.falhou",
     "banco.backup_criado", "banco.backup_falhou", "banco.gravacao_falhou",
-    "banco.manutencao_falhou", "banco.restaurado", "conversa.resposta_falhou",
-    "internet.pesquisa_avaliada", "internet.pesquisa_cancelada",
+    "banco.manutencao_falhou", "banco.restaurado", "conversa.inicializacao_falhou",
+    "conversa.resposta_falhou",
+    "configuracao.gravacao_falhou",
+    "internet.pesquisa_avaliada", "internet.pesquisa_cancelada", "internet.busca_falhou",
     "memoria.indexacao_falhou", "microfone.captura_falhou",
+    "memoria.gerenciamento_falhou",
     "memoria.busca_semantica_falhou",
     "microfone.frase_capturada", "microfone.interrupcao_falhou",
     "ollama.embedding.ok", "ollama.embedding.falha", "ollama.planejamento.ok",
     "ollama.planejamento.falha", "ollama.resposta.ok", "ollama.resposta.falha",
     "voz.reproducao_ok", "voz.reproducao_falhou", "voz.online_falhou",
     "voz.local_falhou", "whisper.gpu_carregada", "whisper.gpu_falhou",
-    "whisper.cpu_carregada", "whisper.preparacao_falhou",
+    "whisper.cpu_carregada", "whisper.modelo_falhou", "whisper.preparacao_falhou",
     "whisper.transcricao_ok", "whisper.transcricao_falhou", "whisper.gpu_fallback",
 }
 
@@ -80,3 +83,31 @@ def registrar(evento, *, duracao_ms=None, erro=None, quantidade=None):
         _obter_logger().info(json.dumps(registro, ensure_ascii=False))
     except OSError:
         pass  # Falha no log não interrompe conversa, voz ou gravação.
+
+
+def eventos_recentes(limite=5):
+    """Lê apenas hora e código de eventos válidos; descarta qualquer outro dado do log."""
+    if type(limite) is not int or not 1 <= limite <= 20:
+        raise ValueError("Limite de eventos inválido.")
+    try:
+        with (PASTA_LOGS / "assistente.log").open("rb") as arquivo:
+            arquivo.seek(0, os.SEEK_END)
+            tamanho = arquivo.tell()
+            arquivo.seek(max(0, tamanho - 65_536))
+            linhas = arquivo.read().splitlines()
+    except OSError:
+        return []
+    recentes = []
+    for linha in reversed(linhas):
+        try:
+            registro = json.loads(linha)
+            evento = registro.get("evento")
+            hora = datetime.fromisoformat(registro.get("hora_utc", ""))
+            if evento not in EVENTOS or hora.tzinfo is None:
+                continue
+            recentes.append((hora.astimezone().strftime("%d/%m %H:%M"), evento))
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if len(recentes) == limite:
+            break
+    return recentes

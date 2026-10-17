@@ -38,6 +38,7 @@ def iniciar_estrutura(conexao):
             assunto TEXT NOT NULL DEFAULT 'geral',
             projeto TEXT NOT NULL DEFAULT '',
             importancia INTEGER NOT NULL DEFAULT 3 CHECK(importancia BETWEEN 1 AND 5),
+            tipo TEXT NOT NULL DEFAULT 'fato' CHECK(tipo IN ('fato', 'preferencia')),
             chave TEXT,
             criada_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             atualizada_em TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -66,6 +67,10 @@ def iniciar_estrutura(conexao):
         CREATE INDEX IF NOT EXISTS idx_memorias_escopo ON memorias(projeto, assunto);
         CREATE INDEX IF NOT EXISTS idx_mensagens_escopo ON mensagens(projeto, assunto, id);
     """)
+    colunas_memoria = {r[1] for r in conexao.execute("PRAGMA table_info(memorias)")}
+    if "tipo" not in colunas_memoria:
+        conexao.execute("ALTER TABLE memorias ADD COLUMN tipo TEXT NOT NULL DEFAULT 'fato'")
+        conexao.execute("UPDATE memorias SET tipo='preferencia' WHERE lower(conteudo) LIKE 'prefiro %' OR lower(conteudo) LIKE 'gosto %'")
     resumos.iniciar_estrutura(conexao)
     conexao.execute("CREATE TEMP TABLE IF NOT EXISTS memorias_no_contexto (id INTEGER PRIMARY KEY)")
     conexao.commit()
@@ -75,6 +80,22 @@ def contexto_ativo(conexao):
     """Retorna o assunto e o projeto atualmente selecionados."""
     dados = dict(conexao.execute("SELECT chave, valor FROM config_memoria"))
     return dados.get("assunto", "geral"), dados.get("projeto", "")
+
+
+def habilitada(conexao):
+    registro = conexao.execute("SELECT valor FROM config_memoria WHERE chave='habilitada'").fetchone()
+    return registro is None or registro[0] != "0"
+
+
+def definir_habilitada(conexao, ativa):
+    if type(ativa) is not bool:
+        raise ValueError("A preferência de memória deve ser verdadeira ou falsa.")
+    with conexao:
+        conexao.execute("INSERT OR REPLACE INTO config_memoria VALUES ('habilitada', ?)", ("1" if ativa else "0",))
+
+
+def classificar(texto):
+    return "preferencia" if re.match(r"^(prefiro|gosto|nao gosto|quero que|responda|fale comigo)\b", normalizar(texto)) else "fato"
 
 
 def definir_contexto(conexao, assunto=None, projeto=None):
@@ -157,6 +178,8 @@ def _suprimir_fontes(conexao, identificador):
 
 def registrar_contexto(conexao, texto, historico):
     """Rastreia fatos expostos ao modelo, inclusive via resumos/respostas anteriores."""
+    if not habilitada(conexao):
+        return
     ids = {int(i) for i in re.findall(r"(?m)^Fato #(\d+)\b", texto)}
     mensagens = {int(i) for i in re.findall(r"(?m)^Conversa #(\d+)\b", texto)}
     mensagens.update(m["id"] for m in historico if "id" in m)
@@ -175,6 +198,8 @@ def registrar_contexto(conexao, texto, historico):
 
 
 def vincular_resposta(conexao, identificador):
+    if not habilitada(conexao):
+        return
     with conexao:
         conexao.execute("""INSERT OR IGNORE INTO dependencias_memoria
             SELECT m.id, ? FROM memorias_no_contexto c JOIN memorias m ON m.id=c.id""",(identificador,))
@@ -192,13 +217,18 @@ def filtrar_historico(conexao, historico):
     return permitidas
 
 
-def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=None):
+def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=None, tipo=None):
     """Salva ou atualiza um fato, vinculando-o às mensagens que o originaram."""
+    if not habilitada(conexao):
+        raise ValueError("A memória está desativada. Ative-a para guardar lembranças.")
     texto = texto.strip()
     if not texto or len(texto) > 2000:
         raise ValueError("A lembrança deve ter entre 1 e 2000 caracteres.")
     if not 1 <= int(importancia) <= 5:
         raise ValueError("A importância deve ser de 1 a 5.")
+    tipo = classificar(texto) if tipo is None else tipo
+    if tipo not in {"fato", "preferencia"}:
+        raise ValueError("O tipo deve ser fato ou preferência.")
     ativo_assunto, ativo_projeto = contexto_ativo(conexao)
     assunto = ativo_assunto if assunto is None else assunto
     projeto = ativo_projeto if projeto is None else projeto
@@ -218,14 +248,14 @@ def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=No
         if existente:
             identificador = existente[0]
             conexao.execute(
-                "UPDATE memorias SET conteudo=?,normalizado=?,importancia=MAX(importancia,?),atualizada_em=CURRENT_TIMESTAMP WHERE id=?",
-                (texto, normal, importancia, identificador),
+                "UPDATE memorias SET conteudo=?,normalizado=?,importancia=MAX(importancia,?),tipo=?,atualizada_em=CURRENT_TIMESTAMP WHERE id=?",
+                (texto, normal, importancia, tipo, identificador),
             )
             conexao.execute("DELETE FROM vetores_lembrancas WHERE memoria_id=?", (identificador,))
         else:
             identificador = conexao.execute(
-                "INSERT INTO memorias(conteudo,normalizado,assunto,projeto,importancia,chave) VALUES (?,?,?,?,?,?)",
-                (texto, normal, assunto, projeto, importancia, chave),
+                "INSERT INTO memorias(conteudo,normalizado,assunto,projeto,importancia,chave,tipo) VALUES (?,?,?,?,?,?,?)",
+                (texto, normal, assunto, projeto, importancia, chave, tipo),
             ).lastrowid
         if origem is not None:
             conexao.execute("INSERT OR IGNORE INTO fontes_memoria VALUES (?, ?)", (identificador, origem))
@@ -239,9 +269,9 @@ def guardar(conexao, texto, assunto=None, projeto=None, importancia=4, origem=No
     return identificador
 
 
-def editar(conexao, identificador, texto, assunto=None, projeto=None, importancia=None):
+def editar(conexao, identificador, texto, assunto=None, projeto=None, importancia=None, tipo=None):
     """Edita uma memória existente e mantém seus vínculos e o escopo válido."""
-    antiga = conexao.execute("SELECT assunto,projeto,importancia FROM memorias WHERE id=?", (identificador,)).fetchone()
+    antiga = conexao.execute("SELECT assunto,projeto,importancia,tipo FROM memorias WHERE id=?", (identificador,)).fetchone()
     if not antiga:
         raise ValueError("Lembrança não encontrada.")
     texto = texto.strip()
@@ -250,14 +280,17 @@ def editar(conexao, identificador, texto, assunto=None, projeto=None, importanci
     assunto = antiga[0] if assunto is None else assunto.strip().casefold() or "geral"
     projeto = antiga[1] if projeto is None else projeto.strip().casefold()
     importancia = antiga[2] if importancia is None else int(importancia)
+    tipo = antiga[3] if tipo is None else tipo
     if not 1 <= importancia <= 5:
         raise ValueError("A importância deve ser de 1 a 5.")
+    if tipo not in {"fato", "preferencia"}:
+        raise ValueError("O tipo deve ser fato ou preferência.")
     try:
         with conexao:
             _suprimir_fontes(conexao, identificador)
             conexao.execute(
-                "UPDATE memorias SET conteudo=?,normalizado=?,assunto=?,projeto=?,importancia=?,chave=?,atualizada_em=CURRENT_TIMESTAMP WHERE id=?",
-                (texto, normalizar(texto), assunto, projeto, importancia, _chave_fato(texto), identificador),
+                "UPDATE memorias SET conteudo=?,normalizado=?,assunto=?,projeto=?,importancia=?,chave=?,tipo=?,atualizada_em=CURRENT_TIMESTAMP WHERE id=?",
+                (texto, normalizar(texto), assunto, projeto, importancia, _chave_fato(texto), tipo, identificador),
             )
             conexao.execute("DELETE FROM vetores_lembrancas WHERE memoria_id=?", (identificador,))
     except sqlite3.IntegrityError as erro:
@@ -280,6 +313,11 @@ def processar_mensagem(conexao, identificador):
     """Extrai e registra fatos de uma mensagem ainda não processada."""
     if conexao.execute("SELECT 1 FROM mensagens_processadas WHERE mensagem_id=?", (identificador,)).fetchone():
         return
+    if not habilitada(conexao):
+        with conexao:
+            conexao.execute("UPDATE mensagens SET ignorar_memoria=1 WHERE id=?", (identificador,))
+            conexao.execute("INSERT OR IGNORE INTO mensagens_processadas VALUES (?)", (identificador,))
+        return
     registro = conexao.execute(
         "SELECT conteudo,assunto,projeto FROM mensagens WHERE id=? AND papel='user' AND ignorar_memoria=0", (identificador,)
     ).fetchone()
@@ -293,6 +331,8 @@ def processar_mensagem(conexao, identificador):
 
 def processar_pendentes(conexao):
     """Processa em lote as mensagens novas que podem gerar memórias."""
+    if not habilitada(conexao):
+        return
     ultimo_id = 0
     while True:
         ids = conexao.execute("""
@@ -318,6 +358,80 @@ def listar(conexao, todos=False):
     return [r for r in registros if todos or (r[3] == projeto and (assunto == "geral" or r[2] == assunto))]
 
 
+def painel(conexao):
+    """Dados limitados para o gerenciador visual, separados por origem."""
+    lembrancas = [dict(zip(
+        ("id", "conteudo", "assunto", "projeto", "importancia", "tipo", "fontes", "usos"), registro
+    )) for registro in conexao.execute("""
+        SELECT m.id,m.conteudo,m.assunto,m.projeto,m.importancia,m.tipo,
+          (SELECT COUNT(*) FROM fontes_memoria f WHERE f.memoria_id=m.id),
+          (SELECT COUNT(*) FROM dependencias_memoria d WHERE d.memoria_id=m.id)
+        FROM memorias m ORDER BY m.atualizada_em DESC,m.id DESC LIMIT 500
+    """)]
+    historico = [dict(zip(
+        ("id", "papel", "conteudo", "data", "assunto", "projeto", "ignorar_memoria"), registro
+    )) for registro in conexao.execute("""
+        SELECT id,papel,conteudo,data,assunto,projeto,ignorar_memoria
+        FROM mensagens ORDER BY id DESC LIMIT 150
+    """)]
+    resumos = [dict(zip(
+        ("id", "conteudo", "assunto", "projeto", "inicio_id", "fim_id"), registro
+    )) for registro in conexao.execute("""
+        SELECT id,conteudo,assunto,projeto,inicio_id,fim_id
+        FROM resumos_conversa ORDER BY id DESC LIMIT 50
+    """)]
+    return {
+        "ativa": habilitada(conexao),
+        "contexto": contexto_ativo(conexao),
+        "lembrancas": lembrancas,
+        "total_lembrancas": conexao.execute("SELECT COUNT(*) FROM memorias").fetchone()[0],
+        "historico": historico,
+        "total_historico": conexao.execute("SELECT COUNT(*) FROM mensagens").fetchone()[0],
+        "resumos": resumos,
+    }
+
+
+def nao_usar_troca(conexao, identificador):
+    """Retira uma troca antiga da recuperação, sem apagar seu histórico visível."""
+    registro = conexao.execute("SELECT papel FROM mensagens WHERE id=?", (identificador,)).fetchone()
+    if not registro:
+        raise ValueError("Mensagem não encontrada.")
+    ids = [identificador]
+    if registro[0] == "user":
+        proxima = conexao.execute("SELECT id,papel FROM mensagens WHERE id>? ORDER BY id LIMIT 1", (identificador,)).fetchone()
+        if proxima and proxima[1] == "assistant":
+            ids.append(proxima[0])
+    elif registro[0] == "assistant":
+        anterior = conexao.execute("SELECT id,papel FROM mensagens WHERE id<? ORDER BY id DESC LIMIT 1", (identificador,)).fetchone()
+        if anterior and anterior[1] == "user":
+            ids.insert(0, anterior[0])
+    with conexao:
+        for mid in ids:
+            memorias = [r[0] for r in conexao.execute("SELECT memoria_id FROM fontes_memoria WHERE mensagem_id=?", (mid,))]
+            conexao.execute("DELETE FROM fontes_memoria WHERE mensagem_id=?", (mid,))
+            for memoria_id in memorias:
+                if not conexao.execute("SELECT 1 FROM fontes_memoria WHERE memoria_id=? LIMIT 1", (memoria_id,)).fetchone():
+                    conexao.execute("DELETE FROM vetores_lembrancas WHERE memoria_id=?", (memoria_id,))
+                    conexao.execute("DELETE FROM dependencias_memoria WHERE memoria_id=?", (memoria_id,))
+                    conexao.execute("DELETE FROM memorias WHERE id=?", (memoria_id,))
+            conexao.execute("UPDATE mensagens SET ignorar_memoria=1 WHERE id=?", (mid,))
+            conexao.execute("DELETE FROM vetores_memoria WHERE mensagem_id=?", (mid,))
+            conexao.execute("DELETE FROM dependencias_memoria WHERE resposta_id=?", (mid,))
+            conexao.execute("DELETE FROM resumos_conversa WHERE inicio_id<=? AND fim_id>=?", (mid, mid))
+
+
+def apagar_tudo(conexao):
+    """Apaga conteúdo de memória e histórico do banco ativo; backups são tratados à parte."""
+    conexao.execute("PRAGMA secure_delete=ON")
+    with conexao:
+        for tabela in ("dependencias_memoria", "fontes_memoria", "vetores_lembrancas",
+                       "mensagens_processadas", "vetores_memoria", "resumos_conversa",
+                       "memorias", "mensagens", "config_memoria"):
+            conexao.execute(f"DELETE FROM {tabela}")
+        conexao.execute("DELETE FROM memorias_no_contexto")
+    conexao.execute("VACUUM")
+
+
 def _no_escopo(assunto, projeto, ativo):
     a, p = ativo
     return projeto in ("", p) and (a == "geral" or assunto in (a, "geral", "pessoal"))
@@ -326,6 +440,8 @@ def _no_escopo(assunto, projeto, ativo):
 def preferencias_de_estilo(conexao, limite=3):
     """Obtém preferências de comunicação recentes para orientar respostas."""
     """Recupera preferências explícitas de conversa, mesmo em perguntas de outro tema."""
+    if not habilitada(conexao):
+        return []
     ativo = contexto_ativo(conexao)
     preferencias = []
     for identificador, texto, assunto, projeto in conexao.execute(
@@ -351,6 +467,8 @@ def preferencias_de_estilo(conexao, limite=3):
 
 def recentes(conexao, limite=8):
     """Retorna fatos atualizados recentemente no contexto ativo."""
+    if not habilitada(conexao):
+        return []
     ativo = contexto_ativo(conexao)
     registros = conexao.execute(
         "SELECT id,conteudo,assunto,projeto FROM mensagens WHERE papel='user' AND ignorar_memoria=0 ORDER BY id DESC"
@@ -373,6 +491,8 @@ def _cosseno(a, b):
 
 def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
     """Seleciona memórias relevantes por escopo, termos e similaridade semântica."""
+    if not habilitada(conexao):
+        return []
     ativo = contexto_ativo(conexao)
     def candidatos():
         for i, texto, assunto, projeto, importancia, vetor in conexao.execute("""
@@ -454,6 +574,8 @@ def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
 
 def indexar_fatos(conexao, gerar_vetores, modelo):
     """Gera e atualiza vetores dos fatos que ainda não foram indexados."""
+    if not habilitada(conexao):
+        return
     pendentes = conexao.execute("""
         SELECT m.id,m.conteudo FROM memorias m LEFT JOIN vetores_lembrancas v
         ON v.memoria_id=m.id AND v.modelo=? WHERE v.memoria_id IS NULL
