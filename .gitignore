@@ -6,6 +6,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+/build/
+/dist/
+/dist-installer/
 
 # Conversas e cópias de segurança do banco ficam apenas neste computador
 *.db

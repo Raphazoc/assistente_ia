@@ -33,6 +33,11 @@ autorização e respeitando os filtros.
 - **Desativar:** **Esc → 5** alterna a pesquisa; a escolha é salva em
   `config_internet.json`. Reativar não dispensa futuras autorizações.
 
+No aplicativo Windows, use **Pesquisa: ligada/desligada** no topo da janela.
+A escolha é salva nas configurações do aplicativo e vale nas próximas aberturas.
+Desligar a pesquisa impede o acesso ao buscador; ligar novamente mantém a
+autorização individual antes de cada busca.
+
 Cada autorização cobre somente as consultas exibidas, no máximo duas, e a
 leitura de até três fontes públicas de texto retornadas por elas. O programa
 não segue links das páginas para ampliar a pesquisa. Se precisar de outra
@@ -53,11 +58,12 @@ explicitamente, sem depender do modo automático da biblioteca.
 
 Além disso, o programa verifica o pedido, as consultas, os endereços, os
 resumos e os textos lidos. Bloqueia termos e domínios adultos conhecidos,
-marcações de página adulta e usa o modelo local para classificar o conteúdo.
-A política também recusa instruções para fraude, roubo de credenciais,
-malware, violência e crimes. Notícias, educação, saúde não explícita e
-segurança defensiva legítima podem passar. Se o planejamento ou a
-classificação falhar, a etapa correspondente não é liberada.
+marcações de página adulta e usa o modelo local para classificar as fontes.
+Pedidos explícitos de instruções para roubo de credenciais, invasão, malware,
+explosivos, golpes ou fraude também são bloqueados. O modelo local decide se
+uma pergunta precisa de pesquisa, mas uma negativa genérica do planejamento
+não bloqueia por si só um pedido comum. Se o planejamento ou a classificação
+de fontes falhar, a etapa correspondente não é liberada.
 
 Os filtros são obrigatórios e não têm opção de desligar. Eles reduzem o risco,
 mas não garantem detectar todo conteúdo impróprio; o modelo pode errar e

@@ -15,7 +15,7 @@ import diagnostico
 
 TAXA_AMOSTRAGEM = 16000
 AMOSTRAS_POR_BLOCO = 512  # Janela de 32 ms usada pelo Silero VAD v6.
-SILENCIO_FINAL = 0.7
+SILENCIO_FINAL = 1.1
 DURACAO_MINIMA_FALA = 0.12
 DURACAO_MAXIMA_FALA = 30
 TEMPO_ESPERA_INICIO = 10
@@ -129,9 +129,10 @@ class DetectorVoz:
 class GravadorFrase:
     """Encerra a frase por silêncio, sem impor seis segundos a cada gravação."""
 
-    def __init__(self, limite_fala=None):
+    def __init__(self, limite_fala=None, aguardar_fala=False):
         self.duracao_bloco = AMOSTRAS_POR_BLOCO / TAXA_AMOSTRAGEM
         self.limite_fala = limite_fala
+        self.aguardar_fala = aguardar_fala
         self.candidatos = 0
         self.anteriores = deque(
             maxlen=max(1, math.ceil(MARGEM_INICIO / self.duracao_bloco))
@@ -152,7 +153,7 @@ class GravadorFrase:
             self.espera += 1
             self.candidatos = self.candidatos + 1 if tem_fala else 0
             if self.candidatos < 3:
-                return self.espera * self.duracao_bloco >= TEMPO_ESPERA_INICIO
+                return not self.aguardar_fala and self.espera * self.duracao_bloco >= TEMPO_ESPERA_INICIO
             self.iniciou = True
             self.fala = self.duracao = self.candidatos - 1
             self.blocos.extend(self.anteriores)
@@ -182,7 +183,7 @@ class GravadorFrase:
 
 def atalho_menu_pressionado():
     """Lê Esc sem bloquear a captura no terminal do Windows, inclusive no VS Code."""
-    if os.name != "nt" or not sys.stdin.isatty():
+    if os.name != "nt" or sys.stdin is None or not sys.stdin.isatty():
         return False
     import msvcrt
 
@@ -195,12 +196,12 @@ def atalho_menu_pressionado():
     return False
 
 
-def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None):
+def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None, aguardar_fala=False):
     """Retorna None para abrir o menu, ou um vetor de áudio da frase."""
     if teclado and atalho_menu_pressionado():
         return None
     detector = DetectorVoz()
-    gravador = GravadorFrase(limite_fala=limite_fala)
+    gravador = GravadorFrase(limite_fala=limite_fala, aguardar_fala=aguardar_fala)
     filtro = FiltroRuido()
     if anunciar:
         print("\nPode falar. Faça uma pausa ao terminar. Esc = menu de modos.")
@@ -223,14 +224,18 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None)
                 return gravador.audio()
 
 
-def ouvir():
+def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None):
     inicio = time.monotonic()
-    audio = capturar_audio()
+    audio = capturar_audio(cancelar=cancelar, teclado=teclado, aguardar_fala=aguardar_fala)
     if audio is None:
+        if cancelar is not None and cancelar.is_set():
+            return ""
         raise SolicitarMenu()
     if not audio.size:
         return ""
 
+    if ao_capturar is not None:
+        ao_capturar()
     diagnostico.registrar("microfone.frase_capturada", duracao_ms=(time.monotonic() - inicio) * 1000)
     print("Processando sua fala...")
     inicio = time.monotonic()

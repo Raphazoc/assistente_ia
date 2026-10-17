@@ -22,13 +22,20 @@ class GravadorFraseTests(unittest.TestCase):
         for _ in range(quantidade):
             self.assertFalse(self.gravador.processar(self.bloco, 0.9))
 
-    def test_encerra_com_sete_decimos_de_silencio_apos_fala(self):
+    def test_encerra_apos_pausa_de_silencio_depois_da_fala(self):
         self.falar(10)
         blocos_silencio = math.ceil(voz.SILENCIO_FINAL / self.gravador.duracao_bloco)
         for _ in range(blocos_silencio - 1):
             self.assertFalse(self.gravador.processar(self.bloco, 0.0))
         self.assertTrue(self.gravador.processar(self.bloco, 0.0))
-        self.assertLess(self.gravador.audio().size / voz.TAXA_AMOSTRAGEM, 1.1)
+        self.assertLess(self.gravador.audio().size / voz.TAXA_AMOSTRAGEM, 1.5)
+
+    def test_escuta_continua_espera_fala_sem_expirar(self):
+        gravador = voz.GravadorFrase(aguardar_fala=True)
+        total = math.ceil(voz.TEMPO_ESPERA_INICIO * 2 / gravador.duracao_bloco)
+        for _ in range(total):
+            self.assertFalse(gravador.processar(self.bloco, 0.0))
+        self.assertEqual(gravador.audio().size, 0)
 
     def test_pausa_curta_nao_encerra_e_nova_fala_reinicia_contagem(self):
         self.falar(10)

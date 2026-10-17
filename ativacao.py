@@ -66,15 +66,16 @@ def preparar_pedido_falado(texto, palavra):
 class MonitorInterrupcao:
     """Escuta uma chamada durante a saída; o teclado é lido pela reprodução."""
 
-    def __init__(self, texto_falado):
+    def __init__(self, texto_falado, habilitado=True):
         self.texto_falado = normalizar(texto_falado)
+        self.habilitado = habilitado
         self.finalizar = threading.Event()
         self.interrompido = threading.Event()
         self.comando = ""
         self.thread = None
 
     def __enter__(self):
-        if carregar_configuracao()["interromper_por_voz"]:
+        if self.habilitado and carregar_configuracao()["interromper_por_voz"]:
             self.thread = threading.Thread(target=self._escutar, daemon=True)
             self.thread.start()
         return self

@@ -14,6 +14,7 @@ from ativacao import MonitorInterrupcao, carregar_configuracao, definir_palavra,
 import memoria
 import resumos
 import internet
+import acoes
 import banco
 import diagnostico
 
@@ -499,13 +500,13 @@ def autorizar_pesquisa(plano, modo_voz=False):
     return internet.normalizar(resposta).strip(" .!?") in {"s", "sim", "autorizo", "autorizar"}
 
 
-def preparar_pesquisa(pergunta, historico, modo_voz=False):
+def preparar_pesquisa(pergunta, historico, modo_voz=False, pedir_autorizacao=None):
     print("[INTERNET] Avaliando localmente se é necessário pesquisar...")
     inicio = time.monotonic()
     try:
         pesquisa = internet.preparar(
             pergunta, historico, gerar_json_pesquisa,
-            lambda plano: autorizar_pesquisa(plano, modo_voz),
+            pedir_autorizacao or (lambda plano: autorizar_pesquisa(plano, modo_voz)),
         )
         diagnostico.registrar(
             "internet.pesquisa_avaliada", duracao_ms=(time.monotonic() - inicio) * 1000,
@@ -515,6 +516,42 @@ def preparar_pesquisa(pergunta, historico, modo_voz=False):
     except SolicitarMenu:
         diagnostico.registrar("internet.pesquisa_cancelada")
         raise
+
+
+def autorizar_acao(plano, modo_voz=False):
+    print("\n===== CONFIRMAÇÃO DE AÇÃO =====")
+    print(acoes.descricao(plano))
+    print("A confirmação vale apenas para esta ação. Esc cancela.")
+    if modo_voz:
+        print("Diga 'confirmo' para executar; qualquer outra resposta cancela.")
+        try:
+            from fala import falar
+            falar("Preparei uma ação no computador. Confira os detalhes no terminal e diga a confirmação exibida se concordar.")
+        except SolicitarMenu:
+            raise
+        except Exception:
+            pass
+        return normalizar_comando(reconhecer_voz()) == "confirmo"
+    return normalizar_comando(ler_texto("Executar esta ação? [s/N]: ")) in {"s", "sim", "confirmo"}
+
+
+def atender_acao(pergunta, modo_voz=False, confirmar=None, mostrar=None):
+    if not acoes.parece_pedido_de_acao(pergunta):
+        return None
+    try:
+        plano = acoes.planejar(pergunta, PASTA_PROJETO, gerar_json_pesquisa)
+        if plano is None:
+            return None
+        if not (confirmar(plano) if confirmar is not None else autorizar_acao(plano, modo_voz)):
+            return "Ação cancelada; nada foi executado."
+        resultado = acoes.executar(plano, PASTA_PROJETO, gerar_json_pesquisa, mostrar=mostrar)
+        diagnostico.registrar("acoes.executada")
+        return resultado
+    except SolicitarMenu:
+        raise
+    except Exception as erro:
+        diagnostico.registrar("acoes.falhou", erro=erro)
+        return f"Não foi possível executar a ação: {erro}"
 
 
 # ==========================================
@@ -730,6 +767,7 @@ def main():
         print("'/memorias' lista fatos; '/lembrar FATO' guarda; Esc → 4 gerencia lembranças.")
         print("Pesquisa autônoma com autorização por pesquisa. Use '/pesquisar ASSUNTO' para solicitar.")
         print("Esc → 5 ativa/desativa a pesquisa. Conteúdo adulto é bloqueado.")
+        print("Ações no computador: peça para abrir, listar, ler, criar pasta ou mover arquivo; cada ação pede confirmação.")
         assunto, projeto = memoria.contexto_ativo(conexao)
         print(f"Memória ativa: assunto {assunto}; projeto {projeto or 'geral'}.")
         print(f"Nome opcional para interromper a fala: {carregar_configuracao()['palavra_ativacao']} (altere na opção 3)")
@@ -843,10 +881,12 @@ def main():
             # Fatos e falas do usuário são duráveis mesmo se a geração falhar.
             id_pergunta = salvar_mensagem(conexao, "user", pergunta)
             try:
-                pesquisa = preparar_pesquisa(pergunta, historico, modo_voz=(modo == "voz"))
-                resposta = obter_resposta(
-                    conexao, historico, pergunta, modo_voz=(modo == "voz"), pesquisa=pesquisa
-                )
+                resposta = atender_acao(pergunta, modo_voz=(modo == "voz"))
+                if resposta is None:
+                    pesquisa = preparar_pesquisa(pergunta, historico, modo_voz=(modo == "voz"))
+                    resposta = obter_resposta(
+                        conexao, historico, pergunta, modo_voz=(modo == "voz"), pesquisa=pesquisa
+                    )
 
             except SolicitarMenu:
                 print("Pesquisa cancelada; nenhum acesso é autorizado pelo menu.")

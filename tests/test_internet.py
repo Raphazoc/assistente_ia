@@ -87,6 +87,19 @@ class InternetTests(unittest.TestCase):
         self.assertEqual(internet.preparar("Pedido comum", [], modelo, autorizar).status, "bloqueada")
         autorizar.assert_not_called()
 
+    def test_negativa_generica_do_planejador_nao_bloqueia_pedido_comum(self):
+        modelo = Mock(return_value={"pesquisar": True, "permitido": False,
+                                    "consultas": ["documentação oficial do Python"], "motivo": "Verificar fontes"})
+        autorizar = Mock(return_value=False)
+        resultado = internet.preparar("Pesquise documentação oficial do Python", [], modelo, autorizar)
+        self.assertEqual(resultado.status, "negada")
+        autorizar.assert_called_once()
+
+    def test_pesquisa_direta_recupera_consulta_quando_planejador_omite(self):
+        modelo = Mock(return_value={"pesquisar": False, "consultas": [], "motivo": "Pesquisa solicitada"})
+        plano = internet.planejar("/pesquisar documentação oficial do Python", [], modelo)
+        self.assertEqual(plano.consultas, ("documentação oficial do Python",))
+
     def test_falha_do_planejador_nao_libera_pesquisa(self):
         modelo = Mock(side_effect=ValueError("JSON inválido"))
         autorizar = Mock()

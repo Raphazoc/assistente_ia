@@ -150,6 +150,10 @@ Os nomes dos modelos precisam corresponder às constantes definidas em
 
 ## Executando
 
+Para usar a janela Windows instalável, veja [INSTALACAO.md](INSTALACAO.md).
+Ela mostra Escrita e Áudio em dois painéis lado a lado, sem sobreposição.
+O modo por terminal abaixo continua disponível.
+
 Na raiz do projeto, com o ambiente virtual ativado:
 
 ```powershell

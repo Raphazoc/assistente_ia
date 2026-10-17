@@ -13,6 +13,7 @@ PASTA_LOGS = Path(__file__).resolve().parent / "logs"
 _logger = None
 _trava = threading.RLock()
 EVENTOS = {
+    "acoes.executada", "acoes.falhou",
     "banco.backup_criado", "banco.backup_falhou", "banco.gravacao_falhou",
     "banco.manutencao_falhou", "banco.restaurado", "conversa.resposta_falhou",
     "internet.pesquisa_avaliada", "internet.pesquisa_cancelada",

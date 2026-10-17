@@ -45,17 +45,23 @@ integrado do VS Code. Se estiver usando uma entrada sem terminal, digite
 **"menu"** ou diga **"menu"**.
 
 O microfone agora identifica fala usando o Silero VAD já incluído no
-`faster-whisper`. A gravação termina após aproximadamente **0,7 segundo de
+`faster-whisper`. A gravação termina após aproximadamente **1,1 segundo de
 silêncio** depois da fala, em vez de esperar seis segundos fixos.
 Pausas mais curtas permitem continuar a mesma frase. Isso detecta uma pausa
 na voz; não analisa se a frase está gramaticalmente completa.
 
 Para dar mais tempo entre palavras, aumente `SILENCIO_FINAL` em `voz.py`
-(por exemplo, `1.0`). Para respostas mais rápidas, diminua com cuidado,
+(por exemplo, `1.5`). Para respostas mais rápidas, diminua com cuidado,
 pois uma pausa natural pode encerrar a gravação. O limite de uma fala
 contínua é de 30 segundos, e silêncio sem fala não é enviado ao Whisper.
 Depois de encerrar a gravação, ainda é necessário transcrever o áudio
 e gerar a resposta da IA.
+
+No aplicativo Windows, **Ativar microfone** mantém a escuta ligada até você
+desligá-la. A IA espera o início da fala sem prazo fixo e volta a ouvir após
+cada resposta. Enquanto responde, a escuta normal pausa para evitar que a IA
+transcreva a própria voz; a interrupção por nome continua disponível se estiver
+configurada. O microfone começa desligado ao abrir o aplicativo.
 
 ## Conversa e interrupção
 

@@ -11,7 +11,7 @@ class InterromperFala(Exception):
 
 
 def tecla_durante_fala():
-    if os.name != "nt" or not sys.stdin.isatty():
+    if os.name != "nt" or sys.stdin is None or not sys.stdin.isatty():
         return None
     import msvcrt
 

@@ -37,6 +37,12 @@ PADRAO_ADULTO = re.compile(
     r"erotic\w*|sexo explicito|conteudo sexual explicito|videos? adultos?|"
     r"conteudo adulto|material adulto|fetiche sexual)\b|(?:\+\s*18|18\s*\+)"
 )
+PADRAO_INSTRUCAO_PERIGOSA = re.compile(
+    r"\b(?:como|tutorial|passo a passo|me ensine|instrucoes para|codigo para)\b"
+    r".{0,90}\b(?:roubar (?:senhas?|credenciais?)|invadir (?:contas?|redes?|sistemas?)|"
+    r"fabricar (?:bombas?|explosivos?)|criar (?:malware|ransomware)|"
+    r"aplicar golpes?|fraudar)\b"
+)
 POLITICA = (
     "Bloqueie conteúdo sexual explícito, pornografia, erotismo e exploração sexual, "
     "incluindo pedidos de imagens ou vídeos adultos. Bloqueie instruções operacionais "
@@ -47,10 +53,10 @@ POLITICA = (
 )
 SCHEMA_PLANO = {
     "type": "object", "properties": {
-        "pesquisar": {"type": "boolean"}, "permitido": {"type": "boolean"},
+        "pesquisar": {"type": "boolean"},
         "motivo": {"type": "string"},
         "consultas": {"type": "array", "items": {"type": "string"}, "maxItems": MAX_CONSULTAS},
-    }, "required": ["pesquisar", "permitido", "motivo", "consultas"], "additionalProperties": False,
+    }, "required": ["pesquisar", "motivo", "consultas"], "additionalProperties": False,
 }
 SCHEMA_FILTRO = {
     "type": "object", "properties": {
@@ -66,6 +72,11 @@ def normalizar(texto):
 
 def conteudo_bloqueado(texto):
     return bool(PADRAO_ADULTO.search(normalizar(unquote(texto))))
+
+
+def pedido_bloqueado(texto):
+    pedido = normalizar(unquote(texto))
+    return bool(PADRAO_ADULTO.search(pedido) or PADRAO_INSTRUCAO_PERIGOSA.search(pedido))
 
 
 def habilitada():
@@ -124,10 +135,10 @@ class Pesquisa:
 
 
 def planejar(pergunta, historico, gerar_json):
-    if conteudo_bloqueado(pergunta):
-        return Pesquisa("bloqueada", "Pesquisa bloqueada pelos filtros de conteúdo adulto ou explícito.")
     if not habilitada():
         return Pesquisa("desativada", "A pesquisa na internet está desativada.")
+    if pedido_bloqueado(pergunta):
+        return Pesquisa("bloqueada", "Pesquisa bloqueada pelos filtros de conteúdo explícito ou instruções perigosas.")
     forcada = pergunta.strip().lower().startswith("/pesquisar ")
     pedido = pergunta.strip()[len("/pesquisar "):] if forcada else pergunta
     if not forcada and re.sub(r"[^\w]+", " ", normalizar(pedido)).strip() in CONVERSA_SOCIAL_DIRETA:
@@ -150,16 +161,16 @@ def planejar(pergunta, historico, gerar_json):
     )
     try:
         plano = gerar_json(sistema, dados, SCHEMA_PLANO)
-        if plano.get("permitido") is not True:
-            return Pesquisa("bloqueada", "O pedido não passou pela política de pesquisa segura.")
         if plano.get("pesquisar") is not True and not forcada:
             return None
         consultas = plano.get("consultas")
+        if forcada and not consultas_validas(consultas):
+            consultas = [pedido]
         if not isinstance(consultas, list) or not 1 <= len(consultas) <= MAX_CONSULTAS:
             raise ValueError("Plano sem consultas válidas.")
         if not consultas_validas(consultas):
             raise ValueError("Consulta inválida.")
-        if any(conteudo_bloqueado(q) for q in consultas):
+        if any(pedido_bloqueado(q) for q in consultas):
             return Pesquisa("bloqueada", "Uma consulta proposta foi bloqueada pelos filtros.")
         return PlanoPesquisa(tuple(dict.fromkeys(q.strip() for q in consultas)), str(plano.get("motivo", "Verificar fontes"))[:300])
     except Exception:
@@ -325,7 +336,7 @@ def executar_pesquisa(plano, autorizada, gerar_json):
         return Pesquisa("negada", "O usuário não autorizou a pesquisa. Nenhum buscador foi acessado.")
     if not habilitada():
         return Pesquisa("desativada", "A pesquisa na internet está desativada.")
-    if not isinstance(plano, PlanoPesquisa) or not consultas_validas(plano.consultas) or any(conteudo_bloqueado(q) for q in plano.consultas):
+    if not isinstance(plano, PlanoPesquisa) or not consultas_validas(plano.consultas) or any(pedido_bloqueado(q) for q in plano.consultas):
         return Pesquisa("bloqueada", "Plano bloqueado pela política de pesquisa.")
     encontradas, vistas = [], set()
     try:
