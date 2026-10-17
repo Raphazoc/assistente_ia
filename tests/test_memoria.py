@@ -4,6 +4,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,6 +32,33 @@ class MemoriaPersistenteTests(unittest.TestCase):
             )
         return cursor.lastrowid
 
+    def test_personalidade_muda_com_o_horario_local(self):
+        manha = main.orientacao_de_personalidade(datetime(2026, 10, 16, 9))
+        madrugada = main.orientacao_de_personalidade(datetime(2026, 10, 17, 2))
+        self.assertIn("manhã", manha)
+        self.assertIn("madrugada", madrugada)
+        self.assertNotEqual(manha, madrugada)
+        self.assertIn("Preferências explícitas", madrugada)
+
+    def test_preferencia_de_estilo_vale_em_outro_assunto_e_pode_ser_excluida(self):
+        identificador = main.memoria.guardar(self.conexao, "Prefiro respostas sem piadas.")
+        self.conexao.close()
+        self.conexao = main.iniciar_banco()
+        with (
+            patch.object(main, "buscar_memorias", return_value=[]),
+            patch.object(main, "chat", return_value={"message": {"content": "Pronto."}}) as chat,
+        ):
+            main.obter_resposta(self.conexao, [], "Como ordenar uma lista?")
+            self.assertIn("Prefiro respostas sem piadas.", chat.call_args.kwargs["messages"][0]["content"])
+            novo = main.memoria.guardar(self.conexao, "Prefiro respostas com piadas.")
+            main.obter_resposta(self.conexao, [], "Como ordenar uma lista?")
+            contexto = chat.call_args.kwargs["messages"][0]["content"]
+            self.assertLess(contexto.index("Prefiro respostas com piadas."), contexto.index("Prefiro respostas sem piadas."))
+            main.memoria.excluir(self.conexao, novo)
+            main.memoria.excluir(self.conexao, identificador)
+            main.obter_resposta(self.conexao, [], "Como ordenar uma lista?")
+            self.assertNotIn("Prefiro respostas sem piadas.", chat.call_args.kwargs["messages"][0]["content"])
+
     def test_reinicio_recupera_assuntos_sem_repetir_negativas_antigas(self):
         self.salvar("user", "Estou criando uma IA com Python e SQLite.")
         negativa = "Infelizmente, não tenho memória de conversas anteriores."
@@ -41,6 +69,7 @@ class MemoriaPersistenteTests(unittest.TestCase):
         self.conexao = sqlite3.connect(self.banco)
         with (
             patch.object(main, "indexar_memorias_antigas"),
+            patch.object(main, "preparar_pesquisa", return_value=None),
             patch.object(main, "indexar_nova_mensagem"),
             patch.object(main, "embed", return_value={"embeddings": [[1, 0]]}),
             patch.object(main, "chat", return_value={
@@ -104,6 +133,7 @@ class MemoriaPersistenteTests(unittest.TestCase):
         saida = io.StringIO()
         with (
             patch.object(main, "indexar_memorias_antigas", side_effect=RuntimeError("Offline")),
+            patch.object(main, "preparar_pesquisa", return_value=None),
             patch.object(main, "ler_texto", side_effect=["1", "sair"]),
             contextlib.redirect_stdout(saida),
         ):
@@ -146,6 +176,7 @@ class MemoriaPersistenteTests(unittest.TestCase):
     def test_fato_do_usuario_e_salvo_mesmo_quando_a_resposta_falha(self):
         with (
             patch.object(main, "indexar_memorias_antigas"),
+            patch.object(main, "preparar_pesquisa", return_value=None),
             patch.object(main, "chat", side_effect=RuntimeError("Modelo offline")),
             patch.object(main, "ler_texto", side_effect=["1", "Meu nome é Elisa.", "sair"]),
             contextlib.redirect_stdout(io.StringIO()),

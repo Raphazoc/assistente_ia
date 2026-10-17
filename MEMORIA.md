@@ -3,6 +3,8 @@
 As conversas e lembranças ficam em `memoria.db` e continuam disponíveis após
 reiniciar o programa. A atualização do banco preserva os registros existentes
 e cria uma cópia de segurança antes da migração.
+Backups automáticos diários e restauração manual estão descritos em
+[CONFIABILIDADE.md](CONFIABILIDADE.md).
 
 ## Guardar e gerenciar fatos
 
@@ -65,7 +67,27 @@ segurança podem continuar contendo esses dados.
 
 ## Uso por voz
 
-Os comandos digitados com `/` estão disponíveis no modo de texto. No modo
-de áudio, a palavra de ativação também é exigida para comandos falados; por
-padrão, comece com **“Aurora”**. Para gerenciar uma lembrança pelo número,
-use **Esc → 4** e siga as opções exibidas.
+Os comandos que começam com `/` estão disponíveis no modo de texto. No modo
+de áudio, fale o pedido diretamente. Para guardar uma lembrança, diga, por
+exemplo, **“Lembre que prefiro respostas curtas”**. Para listar, editar ou
+excluir lembranças pelo número, use **Esc → 4** e siga as opções exibidas.
+Os controles de áudio e digitação estão em [VOZ.md](VOZ.md).
+
+## Personalidade dinâmica
+
+A assistente mantém um jeito confiante, bem-humorado e paciente, mas ajusta
+o ritmo conforme manhã, tarde, noite ou madrugada no horário local. A resposta
+é gerada pelo modelo a cada conversa, considerando a pergunta, o histórico
+e as preferências de estilo disponíveis; o horário não precisa ser mencionado.
+
+Para mudar o jeito dela de forma persistente, diga, por exemplo,
+**“Lembre que prefiro respostas sem piadas”** ou use `/lembrar Prefiro respostas
+sem piadas`. Essas preferências também são recuperadas ao falar de outro
+assunto. Você pode editá-las ou excluí-las em **Esc → 4**.
+
+## Pesquisas online
+
+As respostas com fontes online também ficam no histórico local e podem
+aparecer nos resumos e na recuperação de conversas. As páginas consultadas
+não são importadas automaticamente como fatos pessoais. A pesquisa exige
+autorização para cada pedido, conforme [INTERNET.md](INTERNET.md).

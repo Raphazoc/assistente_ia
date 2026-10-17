@@ -34,14 +34,15 @@ Para usar apenas a voz local, defina `USAR_VOZ_ONLINE = False` em `fala.py`.
 ## Microfone e troca de modo
 
 Durante a escuta ou a digitação, pressione **Esc** no terminal do programa
-para abrir o menu: **1 — digitação**, **2 — áudio**, **3 — alterar palavra de
-ativação**, **4 — gerenciar memórias**, **0 — manter o modo atual**.
+para abrir o menu: **1 — digitação**, **2 — áudio**, **3 — alterar nome para
+interromper a fala**, **4 — gerenciar memórias**, **5 — ativar/desativar pesquisas na
+internet**, **6 — sair e fechar a IA**, **0 — manter o modo atual**.
 A entrada em andamento é descartada ao abrir o menu e não é enviada à IA.
-Também é possível dizer **"Aurora, modo texto"** para ir direto ao teclado.
+Também é possível dizer **"modo texto"** para ir direto ao teclado.
 Para voltar ao microfone, digite **"voz"**.
 O atalho de teclado funciona no terminal do Windows, incluindo o terminal
 integrado do VS Code. Se estiver usando uma entrada sem terminal, digite
-**"menu"** ou diga **"Aurora, menu"**.
+**"menu"** ou diga **"menu"**.
 
 O microfone agora identifica fala usando o Silero VAD já incluído no
 `faster-whisper`. A gravação termina após aproximadamente **0,7 segundo de
@@ -56,16 +57,16 @@ contínua é de 30 segundos, e silêncio sem fala não é enviado ao Whisper.
 Depois de encerrar a gravação, ainda é necessário transcrever o áudio
 e gerar a resposta da IA.
 
-## Palavra de ativação e interrupção
+## Conversa e interrupção
 
-No modo de áudio, comece seu pedido com **"Aurora"**, por exemplo:
-**"Aurora, explique o que é uma variável"**. Você também pode dizer somente
-**"Aurora"** e fazer o pedido nos oito segundos seguintes. O nome precisa
-aparecer completo no início da fala; menções no meio de outra conversa
-não ativam a IA. Os comandos falados, incluindo sair e mudar de modo,
-também precisam da ativação. A digitação não precisa dela.
+No modo de áudio, fale diretamente, por exemplo **"explique o que é uma
+variável"**. Comandos como **"menu"**, **"modo texto"** e **"sair"** também
+funcionam sem nome. Se preferir, **"Aurora, explique Python"** continua
+funcionando. O nome sozinho não envia um pedido. Sem a exigência do nome,
+outras falas próximas ao microfone também podem ser capturadas.
 
-Altere o nome pelo menu **Esc → 3**. A escolha fica salva em `config_voz.json`
+O nome é usado para interromper uma resposta enquanto a IA está falando.
+Altere-o pelo menu **Esc → 3**. A escolha fica salva em `config_voz.json`
 e permanece após reiniciar. Você pode escolher de uma a quatro palavras,
 com até 40 letras. Prefira um nome distinto de palavras comuns no ambiente.
 
@@ -90,7 +91,17 @@ interrupção por voz quando as caixas de som chegam ao microfone.
 Em `config_voz.json`, `interromper_por_voz: false` desativa a escuta durante
 a reprodução; Espaço e Esc continuam disponíveis.
 
+Os modelos de reconhecimento são preparados em segundo plano. A GPU é usada
+para o Whisper apenas quando as bibliotecas CUDA necessárias funcionarem;
+caso contrário, a CPU assume. Falhas de microfone, voz online e saída local
+estão explicadas em [CONFIABILIDADE.md](CONFIABILIDADE.md).
+
 O gerenciamento de fatos, assuntos, projetos e resumos está descrito em
 [MEMORIA.md](MEMORIA.md). No modo de voz, você pode dizer, por exemplo,
-**"Aurora, lembre que prefiro explicações curtas"** para guardar uma lembrança
+**"lembre que prefiro explicações curtas"** para guardar uma lembrança
 sem depender da geração de uma resposta pelo modelo.
+
+Para pesquisas online, a assistente mostra as consultas e pede autorização
+antes de acessar o buscador. No modo de voz, confirme com **“autorizo”**
+apenas após ver a consulta proposta. Os detalhes e os
+filtros obrigatórios estão em [INTERNET.md](INTERNET.md).

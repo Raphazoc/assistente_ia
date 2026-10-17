@@ -161,6 +161,8 @@ class TrocaModoTests(unittest.TestCase):
                 with (
                     patch.object(main, "iniciar_banco", return_value=conexao),
                     patch.object(main, "indexar_memorias_antigas"),
+                    patch.object(main, "preparar_pesquisa", return_value=None),
+                    patch.object(main, "aquecer_voz"),
                     patch.object(main, "carregar_historico", return_value=[]),
                     patch.object(main, "reconhecer_voz", side_effect=["Aurora, " + comando, "Aurora, sair"]),
                     patch.object(main, "obter_resposta") as resposta,

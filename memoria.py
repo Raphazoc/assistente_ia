@@ -1,12 +1,14 @@
 """Fatos duráveis, organização e recuperação do histórico persistente."""
 
 import json
+import heapq
 import math
 import re
 import sqlite3
 import unicodedata
 
 import resumos
+import diagnostico
 
 
 STOPWORDS = set("a o as os um uma uns umas de da do das dos em no na nos nas para por com e ou que se eu meu minha meus minhas voce voces seu sua seus suas qual quais como quando onde pode poderia favor sobre foi era ser esta estou tem tenho lembra lembrar conversamos conversa conversas anteriormente passado passadas salvo salvas guardou diga fale saber".split())
@@ -281,12 +283,20 @@ def processar_mensagem(conexao, identificador):
 
 
 def processar_pendentes(conexao):
-    ids = conexao.execute("""
-        SELECT m.id FROM mensagens m LEFT JOIN mensagens_processadas p ON p.mensagem_id=m.id
-        WHERE m.papel='user' AND m.ignorar_memoria=0 AND p.mensagem_id IS NULL ORDER BY m.id
-    """).fetchall()
-    for identificador, in ids:
-        processar_mensagem(conexao, identificador)
+    ultimo_id = 0
+    while True:
+        ids = conexao.execute("""
+            SELECT m.id FROM mensagens m
+            LEFT JOIN mensagens_processadas p ON p.mensagem_id=m.id
+            WHERE m.papel='user' AND m.ignorar_memoria=0
+              AND p.mensagem_id IS NULL AND m.id>?
+            ORDER BY m.id LIMIT 100
+        """, (ultimo_id,)).fetchall()
+        if not ids:
+            return
+        for identificador, in ids:
+            processar_mensagem(conexao, identificador)
+        ultimo_id = ids[-1][0]
 
 
 def listar(conexao, todos=False):
@@ -300,6 +310,31 @@ def listar(conexao, todos=False):
 def _no_escopo(assunto, projeto, ativo):
     a, p = ativo
     return projeto in ("", p) and (a == "geral" or assunto in (a, "geral", "pessoal"))
+
+
+def preferencias_de_estilo(conexao, limite=3):
+    """Recupera preferências explícitas de conversa, mesmo em perguntas de outro tema."""
+    ativo = contexto_ativo(conexao)
+    preferencias = []
+    for identificador, texto, assunto, projeto in conexao.execute(
+        "SELECT id,conteudo,assunto,projeto FROM memorias ORDER BY id DESC"
+    ):
+        if not _no_escopo(assunto, projeto, ativo):
+            continue
+        frase = normalizar(texto)
+        if not re.search(r"\b(?:prefiro|gosto|nao gosto|quero|responda|fale|seja)\b", frase):
+            continue
+        if not re.search(
+            r"\b(?:respost\w*|explica\w*|tom|humor|piad\w*|brincad\w*|"
+            r"zoeir\w*|serio\w*|direto\w*|curto\w*|detalhad\w*|"
+            r"formal\w*|informal\w*|pacien\w*|calm\w*|giria\w*)\b",
+            frase,
+        ):
+            continue
+        preferencias.append(f"Fato #{identificador} [{assunto}; projeto: {projeto or 'geral'}]: {texto[:250]}")
+        if len(preferencias) >= limite:
+            break
+    return preferencias
 
 
 def recentes(conexao, limite=8):
@@ -325,35 +360,50 @@ def _cosseno(a, b):
 
 def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
     ativo = contexto_ativo(conexao)
-    candidatos = []
-    for i, texto, assunto, projeto, importancia, vetor in conexao.execute("""
-        SELECT m.id,m.conteudo,m.assunto,m.projeto,m.importancia,v.vetor FROM memorias m
-        LEFT JOIN vetores_lembrancas v ON v.memoria_id=m.id AND v.modelo=? ORDER BY m.id DESC
-    """, (modelo,)):
-        if _no_escopo(assunto, projeto, ativo):
-            candidatos.append(("Fato", i, texto, assunto, projeto, importancia, vetor))
-    for i, texto, assunto, projeto, vetor in conexao.execute("""
-        SELECT m.id,m.conteudo,m.assunto,m.projeto,v.vetor FROM mensagens m
-        LEFT JOIN vetores_memoria v ON v.mensagem_id=m.id AND v.modelo=?
-        WHERE m.papel='user' AND m.ignorar_memoria=0 ORDER BY m.id DESC
-    """, (modelo,)):
-        if _no_escopo(assunto, projeto, ativo):
-            candidatos.append(("Conversa", i, texto, assunto, projeto, 1, vetor))
-    for i, texto, assunto, projeto in conexao.execute(
-        "SELECT id,conteudo,assunto,projeto FROM resumos_conversa ORDER BY id DESC"
-    ):
-        if _no_escopo(assunto, projeto, ativo):
-            candidatos.append(("Resumo", i, texto, assunto, projeto, 2, None))
+    def candidatos():
+        for i, texto, assunto, projeto, importancia, vetor in conexao.execute("""
+            SELECT m.id,m.conteudo,m.assunto,m.projeto,m.importancia,v.vetor FROM memorias m
+            LEFT JOIN vetores_lembrancas v ON v.memoria_id=m.id AND v.modelo=? ORDER BY m.id DESC
+        """, (modelo,)):
+            if _no_escopo(assunto, projeto, ativo):
+                yield "Fato", i, texto, assunto, projeto, importancia, vetor
+        for i, texto, assunto, projeto, vetor in conexao.execute("""
+            SELECT m.id,m.conteudo,m.assunto,m.projeto,v.vetor FROM mensagens m
+            LEFT JOIN vetores_memoria v ON v.mensagem_id=m.id AND v.modelo=?
+            WHERE m.papel='user' AND m.ignorar_memoria=0 ORDER BY m.id DESC
+        """, (modelo,)):
+            if _no_escopo(assunto, projeto, ativo):
+                yield "Conversa", i, texto, assunto, projeto, 1, vetor
+        for i, texto, assunto, projeto in conexao.execute(
+            "SELECT id,conteudo,assunto,projeto FROM resumos_conversa ORDER BY id DESC"
+        ):
+            if _no_escopo(assunto, projeto, ativo):
+                yield "Resumo", i, texto, assunto, projeto, 2, None
+
     consulta = set(normalizar(pergunta).split()) - STOPWORDS
     vetor_pergunta = None
-    if any(c[-1] for c in candidatos):
+    possui_vetores = conexao.execute("""
+        SELECT EXISTS(
+            SELECT 1 FROM vetores_lembrancas v JOIN memorias m ON m.id=v.memoria_id
+            WHERE v.modelo=? AND (m.projeto='' OR m.projeto=?)
+              AND (?='geral' OR m.assunto IN (?, 'geral', 'pessoal')) LIMIT 1
+        ) OR EXISTS(
+            SELECT 1 FROM vetores_memoria v JOIN mensagens m ON m.id=v.mensagem_id
+            WHERE v.modelo=? AND m.ignorar_memoria=0
+              AND (m.projeto='' OR m.projeto=?)
+              AND (?='geral' OR m.assunto IN (?, 'geral', 'pessoal')) LIMIT 1
+        )
+    """, (modelo, ativo[1], ativo[0], ativo[0], modelo, ativo[1], ativo[0], ativo[0])).fetchone()[0]
+    if possui_vetores:
         try:
             vetor_pergunta = gerar_vetores([pergunta])[0]
         except Exception as erro:
-            print(f"[MEMÓRIA] Busca semântica indisponível; usando texto e registros recentes. {erro}")
+            diagnostico.registrar("memoria.busca_semantica_falhou", erro=erro)
+            print("[MEMÓRIA] Busca semântica indisponível; usando texto e registros recentes.")
     ampla = bool(re.search(r"convers|lembran|lembra|mem[oó]ria", pergunta.casefold()))
     classificados = []
-    for ordem, (tipo,i,texto,assunto,projeto,importancia,vetor) in enumerate(candidatos):
+    capacidade = max(500, limite * 50)
+    for ordem, (tipo,i,texto,assunto,projeto,importancia,vetor) in enumerate(candidatos()):
         palavras = set(normalizar(texto + " " + assunto + " " + projeto).split()) - STOPWORDS
         lexical = len(consulta & palavras) / max(1, len(consulta))
         semantico = 0
@@ -369,10 +419,13 @@ def selecionar(conexao, pergunta, gerar_vetores, modelo, limite=10):
             score += 0.4
         if assunto == ativo[0] and assunto != "geral":
             score += 0.2
-        classificados.append((score,tipo,i,texto,assunto,projeto))
-    classificados.sort(reverse=True, key=lambda r:r[0])
+        item = (score, -ordem, tipo, i, texto, assunto, projeto)
+        if len(classificados) < capacidade:
+            heapq.heappush(classificados, item)
+        elif item > classificados[0]:
+            heapq.heapreplace(classificados, item)
     vistos, selecionados, por_assunto = set(), [], {}
-    for _, tipo, i, texto, assunto, projeto in classificados:
+    for _, _, tipo, i, texto, assunto, projeto in sorted(classificados, reverse=True):
         normal = normalizar(texto)
         if normal in vistos or por_assunto.get(assunto, 0) >= max(3, limite // 2):
             continue

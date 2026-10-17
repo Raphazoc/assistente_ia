@@ -1,11 +1,11 @@
 import json
 import re
 import threading
-import time
 import unicodedata
 from pathlib import Path
 
 from controles import InterromperFala, SolicitarMenu, tecla_durante_fala
+import diagnostico
 
 
 CONFIGURACAO = Path(__file__).resolve().parent / "config_voz.json"
@@ -43,7 +43,7 @@ def definir_palavra(palavra):
     temporario.replace(CONFIGURACAO)
 
 
-def extrair_chamada(texto, palavra):
+def extrair_chamada(texto, palavra, exigir_separador=False):
     """Compara palavras completas no início, sem aproximações ou substrings."""
     tokens = list(re.finditer(r"\w+", texto))
     nome = normalizar(palavra).split()
@@ -51,25 +51,16 @@ def extrair_chamada(texto, palavra):
         return None
     if [normalizar(t.group()) for t in tokens[:len(nome)]] != nome:
         return None
-    return texto[tokens[len(nome) - 1].end():].lstrip(" ,.:;!?-–—")
+    restante = texto[tokens[len(nome) - 1].end():]
+    if exigir_separador and restante.strip() and not re.match(r"^\s*[,.:;!?–—-]", restante):
+        return None
+    return restante.lstrip(" ,.:;!?-–—")
 
 
-class EstadoAtivacao:
-    def __init__(self):
-        self.aguardando_ate = 0.0
-
-    def processar(self, texto):
-        palavra = carregar_configuracao()["palavra_ativacao"]
-        comando = extrair_chamada(texto, palavra)
-        if comando is not None:
-            self.aguardando_ate = 0 if comando else time.monotonic() + 8
-            if not comando:
-                print("[ATIVAÇÃO] Estou ouvindo. Diga seu pedido nos próximos 8 segundos.")
-            return comando
-        if time.monotonic() < self.aguardando_ate:
-            self.aguardando_ate = 0
-            return texto
-        return ""
+def preparar_pedido_falado(texto, palavra):
+    """Aceita fala direta e remove um nome inicial apenas quando é uma chamada explícita."""
+    chamada = extrair_chamada(texto, palavra, exigir_separador=True)
+    return (texto if chamada is None else chamada).strip()
 
 
 class MonitorInterrupcao:
@@ -103,7 +94,7 @@ class MonitorInterrupcao:
                     return
                 if audio is None or not audio.size:
                     continue
-                texto = transcrever_audio(audio)
+                texto = transcrever_audio(audio, modo_interrupcao=True)
                 if self.finalizar.is_set():
                     return
                 self.processar(texto)
@@ -111,7 +102,8 @@ class MonitorInterrupcao:
                     return
         except Exception as erro:
             if not self.finalizar.is_set():
-                print(f"[VOZ] Interrupção por microfone indisponível; use Espaço ou Esc. {erro}")
+                diagnostico.registrar("microfone.interrupcao_falhou", erro=erro)
+                print("[VOZ] Interrupção por microfone indisponível; use Espaço ou Esc.")
 
     def processar(self, texto):
         frase = normalizar(texto)

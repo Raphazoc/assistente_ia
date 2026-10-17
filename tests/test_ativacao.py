@@ -41,21 +41,16 @@ class AtivacaoTests(unittest.TestCase):
             with self.subTest(nome=nome), self.assertRaises(ValueError):
                 ativacao.definir_palavra(nome)
 
-    def test_so_aceita_palavra_completa_no_inicio(self):
-        estado = ativacao.EstadoAtivacao()
-        for texto in ("Auroral é uma palavra", "Hoje vi a Aurora", "Bom dia", "sair", "modo texto"):
-            self.assertEqual(estado.processar(texto), "")
-        self.assertEqual(estado.processar("AURORA, explique Python."), "explique Python.")
+    def test_pedido_falado_direto_aceita_comandos_sem_nome(self):
+        for texto in ("Explique Python", "sair", "modo texto", "menu"):
+            self.assertEqual(ativacao.preparar_pedido_falado(texto, "Aurora"), texto)
 
-    def test_chamada_sozinha_abre_janela_para_um_pedido_e_expira(self):
-        estado = ativacao.EstadoAtivacao()
-        with patch.object(ativacao.time, "monotonic", return_value=100), contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(estado.processar("Aurora!"), "")
-            self.assertEqual(estado.processar("Explique Python"), "Explique Python")
-            self.assertEqual(estado.processar("Outra conversa"), "")
-            estado.processar("Aurora")
-        with patch.object(ativacao.time, "monotonic", return_value=109):
-            self.assertEqual(estado.processar("Fala do ambiente"), "")
+    def test_nome_opcional_so_e_removido_com_separador(self):
+        self.assertEqual(ativacao.preparar_pedido_falado("AURORA, explique Python.", "Aurora"), "explique Python.")
+        self.assertEqual(ativacao.preparar_pedido_falado("Aurora, sair", "Aurora"), "sair")
+        self.assertEqual(ativacao.preparar_pedido_falado("Aurora!", "Aurora"), "")
+        self.assertEqual(ativacao.preparar_pedido_falado("Aurora boreal", "Aurora"), "Aurora boreal")
+        self.assertEqual(ativacao.preparar_pedido_falado("Auroral é uma palavra", "Aurora"), "Auroral é uma palavra")
 
     def test_monitor_ignora_eco_e_conversa_sem_nome(self):
         monitor = ativacao.MonitorInterrupcao("Você pode dizer Aurora, pare para interromper.")
@@ -162,9 +157,18 @@ class RuidoTests(unittest.TestCase):
             modelo.return_value.transcribe.return_value = (iter(segmentos), None)
             self.assertEqual(voz.transcrever_audio(np.zeros(16000, dtype=np.float32)), "")
 
+    def test_transcricao_normal_nao_induz_palavra_de_ativacao(self):
+        with patch.object(voz, "carregar_modelo") as modelo:
+            modelo.return_value.transcribe.return_value = (iter([]), None)
+            voz.transcrever_audio(np.zeros(16000, dtype=np.float32))
+            self.assertNotIn("hotwords", modelo.return_value.transcribe.call_args.kwargs)
+            self.assertNotIn("initial_prompt", modelo.return_value.transcribe.call_args.kwargs)
+            voz.transcrever_audio(np.zeros(16000, dtype=np.float32), modo_interrupcao=True)
+            self.assertEqual(modelo.return_value.transcribe.call_args.kwargs["hotwords"], "Aurora")
+
 
 class IntegracaoConversaTests(unittest.TestCase):
-    def test_ignora_ambiente_e_processa_novo_pedido_da_interrupcao_uma_vez(self):
+    def test_processa_fala_direta_e_novo_pedido_da_interrupcao_uma_vez(self):
         conexao = sqlite3.connect(":memory:")
         conexao.execute(
             "CREATE TABLE mensagens (id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -178,12 +182,12 @@ class IntegracaoConversaTests(unittest.TestCase):
         with (
             patch.object(main, "iniciar_banco", return_value=conexao),
             patch.object(main, "indexar_memorias_antigas"),
+            patch.object(main, "preparar_pesquisa", return_value=None),
+            patch.object(main, "aquecer_voz"),
             patch.object(main, "indexar_nova_mensagem"),
             patch.object(main, "carregar_historico", return_value=[]),
             patch.object(main, "ler_texto", return_value="2"),
-            patch.object(main, "reconhecer_voz", side_effect=[
-                "Conversa aleatória do ambiente", "Aurora, primeiro pedido", "Aurora, sair"
-            ]) as ouvir,
+            patch.object(main, "reconhecer_voz", side_effect=["primeiro pedido", "sair"]) as ouvir,
             patch.object(main, "obter_resposta", return_value="Uma resposta") as responder,
             patch.object(main, "salvar_mensagem", return_value=1) as salvar,
             patch.object(main, "reproduzir_resposta", side_effect=["segundo pedido", ""]),
@@ -193,7 +197,7 @@ class IntegracaoConversaTests(unittest.TestCase):
             main.main()
         self.assertEqual([c.args[2] for c in responder.call_args_list], ["primeiro pedido", "segundo pedido"])
         self.assertEqual(salvar.call_count, 4)
-        self.assertEqual(ouvir.call_count, 3)
+        self.assertEqual(ouvir.call_count, 2)
 
 
 if __name__ == "__main__":

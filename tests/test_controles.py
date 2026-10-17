@@ -58,6 +58,8 @@ class MenuTests(unittest.TestCase):
         with (
             patch.object(main, "iniciar_banco", return_value=conexao),
             patch.object(main, "indexar_memorias_antigas"),
+            patch.object(main, "preparar_pesquisa", return_value=None),
+            patch.object(main, "aquecer_voz"),
             patch.object(main, "carregar_historico", return_value=[]),
             patch.object(main, "ler_texto", side_effect=entradas),
             patch.object(main, "reconhecer_voz", side_effect=capturas) as reconhecer,
@@ -91,6 +93,20 @@ class MenuTests(unittest.TestCase):
         )
         self.assertNotIn("Modo texto ativado.", saida)
         self.assertEqual(chamadas, 2)
+
+    def test_opcao_sair_fecha_a_ia_antes_de_iniciar_conversa(self):
+        saida, chamadas = self.executar_troca(["6"], [])
+        self.assertIn("6 - Sair (fechar a IA)", saida)
+        self.assertIn("IA encerrada.", saida)
+        self.assertEqual(chamadas, 0)
+
+    def test_opcao_sair_funciona_apos_esc_no_modo_voz(self):
+        saida, chamadas = self.executar_troca(
+            ["2", "6"], [controles.SolicitarMenu()]
+        )
+        self.assertIn("Até a próxima!", saida)
+        self.assertIn("IA encerrada.", saida)
+        self.assertEqual(chamadas, 1)
 
 
 if __name__ == "__main__":

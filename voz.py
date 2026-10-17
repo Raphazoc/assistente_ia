@@ -3,12 +3,14 @@ import math
 import os
 import sys
 import threading
+import time
 from collections import deque
 from functools import lru_cache
 
 import numpy as np
 import sounddevice as sd
 from controles import SolicitarMenu
+import diagnostico
 
 
 TAXA_AMOSTRAGEM = 16000
@@ -21,6 +23,27 @@ MARGEM_INICIO = 0.25
 LIMIAR_INICIO = 0.5
 LIMIAR_CONTINUACAO = 0.35
 _trava_transcricao = threading.Lock()
+_trava_preparacao = threading.Lock()
+_preparacao_iniciada = False
+_cuda_indisponivel = False
+
+
+def gpu_transcricao_disponivel():
+    """Confere bibliotecas CUDA antes de ocupar VRAM com o Whisper."""
+    if _cuda_indisponivel:
+        return False
+    if os.name == "nt":
+        import ctypes
+        try:
+            ctypes.WinDLL("cublas64_12.dll")
+            ctypes.WinDLL("cudnn64_9.dll")
+        except OSError:
+            return False
+    try:
+        import ctranslate2
+        return "int8_float16" in ctranslate2.get_supported_compute_types("cuda")
+    except (RuntimeError, OSError, ValueError):
+        return False
 
 
 class FiltroRuido:
@@ -53,7 +76,34 @@ def carregar_modelo():
     from faster_whisper import WhisperModel
 
     print("Carregando reconhecimento de voz...")
-    return WhisperModel("base", device="cpu", compute_type="int8")
+    if gpu_transcricao_disponivel():
+        try:
+            modelo = WhisperModel("base", device="cuda", compute_type="int8_float16", cpu_threads=4, num_workers=1)
+            diagnostico.registrar("whisper.gpu_carregada")
+            return modelo
+        except (RuntimeError, OSError) as erro:
+            diagnostico.registrar("whisper.gpu_falhou", erro=erro)
+    diagnostico.registrar("whisper.cpu_carregada")
+    return WhisperModel("base", device="cpu", compute_type="int8", cpu_threads=4, num_workers=1)
+
+
+def preparar_modelos():
+    """Aquece VAD e Whisper enquanto o usuário se prepara para falar."""
+    global _preparacao_iniciada
+    with _trava_preparacao:
+        if _preparacao_iniciada:
+            return
+        _preparacao_iniciada = True
+
+    def carregar():
+        try:
+            DetectorVoz()
+            with _trava_transcricao:
+                carregar_modelo()
+        except Exception as erro:
+            diagnostico.registrar("whisper.preparacao_falhou", erro=erro)
+
+    threading.Thread(target=carregar, name="preparar-voz", daemon=True).start()
 
 
 class DetectorVoz:
@@ -174,36 +224,53 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None)
 
 
 def ouvir():
+    inicio = time.monotonic()
     audio = capturar_audio()
     if audio is None:
         raise SolicitarMenu()
     if not audio.size:
         return ""
 
+    diagnostico.registrar("microfone.frase_capturada", duracao_ms=(time.monotonic() - inicio) * 1000)
     print("Processando sua fala...")
-    return transcrever_audio(audio)
+    inicio = time.monotonic()
+    texto = transcrever_audio(audio)
+    diagnostico.registrar("whisper.transcricao_ok", duracao_ms=(time.monotonic() - inicio) * 1000)
+    return texto
 
 
-def transcrever_audio(audio):
-    from ativacao import carregar_configuracao
-
-    palavra = carregar_configuracao()["palavra_ativacao"]
+def transcrever_audio(audio, modo_interrupcao=False):
+    dicas = {}
+    if modo_interrupcao:
+        from ativacao import carregar_configuracao
+        palavra = carregar_configuracao()["palavra_ativacao"]
+        dicas = {
+            "hotwords": palavra,
+            "initial_prompt": f"{palavra}, pare. {palavra}, modo texto. {palavra}, menu.",
+        }
     with _trava_transcricao:
-        segmentos, _ = carregar_modelo().transcribe(
-            audio, language="pt", vad_filter=True, beam_size=1,
-            condition_on_previous_text=False, no_speech_threshold=0.5,
-            hotwords=palavra,
-            initial_prompt=(
-                f"Assistente chamada {palavra}. {palavra}, pare. "
-                f"{palavra}, modo texto. {palavra}, menu."
-            ),
-        )
-        return " ".join(
-            segmento.text.strip() for segmento in segmentos
-            if getattr(segmento, "no_speech_prob", 0) < 0.5
-            and getattr(segmento, "avg_logprob", 0) >= -0.8
-            and getattr(segmento, "compression_ratio", 0) < 2.2
-        ).strip()
+        for tentativa in range(2):
+            modelo = carregar_modelo()
+            try:
+                segmentos, _ = modelo.transcribe(
+                    audio, language="pt", vad_filter=False, beam_size=1,
+                    condition_on_previous_text=False, no_speech_threshold=0.5,
+                    **dicas,
+                )
+                return " ".join(
+                    segmento.text.strip() for segmento in segmentos
+                    if getattr(segmento, "no_speech_prob", 0) < 0.5
+                    and getattr(segmento, "avg_logprob", 0) >= -0.8
+                    and getattr(segmento, "compression_ratio", 0) < 2.2
+                ).strip()
+            except (RuntimeError, OSError) as erro:
+                if tentativa or getattr(getattr(modelo, "model", None), "device", "cpu") != "cuda":
+                    diagnostico.registrar("whisper.transcricao_falhou", erro=erro)
+                    raise
+                global _cuda_indisponivel
+                _cuda_indisponivel = True
+                carregar_modelo.cache_clear()
+                diagnostico.registrar("whisper.gpu_fallback", erro=erro)
 
 
 def main():

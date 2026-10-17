@@ -10,6 +10,7 @@ from pathlib import Path
 import emoji
 import sounddevice as sd
 from controles import InterromperFala, SolicitarMenu, tecla_durante_fala
+import diagnostico
 
 
 PASTA_PROJETO = Path(__file__).resolve().parent
@@ -258,12 +259,17 @@ def _falar(texto, controle=None):
             return
         except FalhaVozOnline as erro:
             _online_indisponivel_ate = time.monotonic() + INTERVALO_RECONEXAO
-            print(f"[VOZ] Serviço online indisponível; usando voz local. Detalhes: {erro}")
+            diagnostico.registrar("voz.online_falhou", erro=erro.__cause__ or erro)
+            print("[VOZ] Serviço online indisponível; usando voz local.")
             texto = erro.texto_pendente
-    if controle is None:
-        falar_local(texto)
-    else:
-        falar_local(texto, controle=controle)
+    try:
+        if controle is None:
+            falar_local(texto)
+        else:
+            falar_local(texto, controle=controle)
+    except Exception as erro:
+        diagnostico.registrar("voz.local_falhou", erro=erro)
+        raise
 
 
 def main():
