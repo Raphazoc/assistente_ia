@@ -1,5 +1,10 @@
 # Assistente Pessoal Local com IA
 
+> **Status: Beta em testes.** A versão atual é identificada como `v0.1b`,
+> em que o `b` significa **Beta**. O projeto ainda está em validação e pode
+> apresentar comportamentos inesperados, alterações de funcionalidade ou
+> incompatibilidades antes de uma versão estável.
+
 Assistente pessoal em Python, desenvolvido para conversar em português
 brasileiro, preservar memória entre sessões e alternar entre interação por
 texto e por voz. A geração de respostas e os embeddings são executados
