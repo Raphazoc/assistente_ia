@@ -437,6 +437,26 @@ e como a alteração foi validada.
 
 ## Licença
 
-Nenhum arquivo de licença foi definido neste repositório até o momento.
-Consulte o proprietário do projeto antes de redistribuir o código ou os
-modelos incluídos.
+O código-fonte deste projeto é distribuído sob a [Licença MIT](./LICENSE).
+
+Isso permite usar, copiar, modificar e redistribuir o código, inclusive em
+projetos comerciais, desde que o aviso de copyright e o texto da licença sejam
+mantidos. O software é fornecido "como está", sem garantias.
+
+A Licença MIT se aplica ao código deste projeto criado por seus autores. Os
+modelos de IA, bibliotecas, vozes, dados e serviços de terceiros utilizados
+podem possuir licenças e termos próprios, que continuam válidos
+independentemente da licença deste repositório.
+
+Entre os componentes que devem ser verificados separadamente estão:
+
+- Ollama e os modelos `qwen3:8b` e `qwen3-embedding:0.6b`;
+- Faster-Whisper e seus modelos de reconhecimento;
+- Piper e o modelo `vozes/pt_BR-faber-medium.onnx`;
+- Edge-TTS e o serviço online de síntese de voz;
+- Bibliotecas instaladas por `requirements.txt` e `requirements-voz.txt`;
+- Serviços externos acessados pelo recurso opcional de pesquisa.
+
+Antes de redistribuir esses componentes, confirme os termos oficiais de cada
+projeto, modelo ou serviço. A Licença MIT deste repositório não transforma
+componentes de terceiros em software MIT nem concede direitos sobre eles.
