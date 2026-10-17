@@ -385,6 +385,7 @@ python -m pytest tests/test_internet.py
 ├── diagnostico.py          # Logs técnicos
 ├── config_voz.json         # Preferências de ativação
 ├── config_internet.json    # Ativação da pesquisa
+├── docs/                   # Documentação detalhada dos subsistemas
 ├── vozes/                  # Modelo local de voz
 ├── tests/                  # Testes automatizados
 ├── requirements.txt        # Dependências gerais
@@ -434,6 +435,15 @@ Antes de propor alterações:
 
 Pull requests devem explicar o problema, a solução, os impactos de privacidade
 e como a alteração foi validada.
+
+## Documentação complementar
+
+As explicações detalhadas de cada subsistema ficam na pasta [`docs/`](./docs/):
+
+- [Memória e resumos](./docs/MEMORIA.md)
+- [Pesquisa na internet](./docs/INTERNET.md)
+- [Voz e áudio](./docs/VOZ.md)
+- [Confiabilidade, diagnóstico e recuperação](./docs/CONFIABILIDADE.md)
 
 ## Licença
 
