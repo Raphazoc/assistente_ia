@@ -15,6 +15,9 @@ def orientar(erro, contexto="conversa"):
         return ("O Windows negou acesso a um arquivo da assistente. Confira as permissões "
                 "da pasta de dados em Configurações → Diagnóstico.")
     if contexto == "microfone":
+        if isinstance(erro, RuntimeError) and str(erro).startswith("O microfone escolhido não está disponível"):
+            return ("O microfone escolhido foi desconectado ou mudou. "
+                    "Escolha outro em Configurações → Voz e teste novamente.")
         return ("Não consegui ouvir pelo microfone. Confira o dispositivo padrão e a permissão "
                 "de microfone do Windows; depois teste em Configurações → Voz.")
     if contexto == "voz":

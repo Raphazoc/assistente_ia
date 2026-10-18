@@ -56,12 +56,13 @@ O instalador é **por usuário**, sem exigir privilégio de administrador. O
 programa fica em `%LOCALAPPDATA%\Programs\AssistenteIA`; o banco, as
 configurações e os logs ficam em `%LOCALAPPDATA%\AssistenteIA`. Arquivos
 organizados pela assistente ficam em `%USERPROFILE%\Documents\AssistenteIA`.
-Atualizar ou desinstalar o programa não remove automaticamente a memória.
-
-Na primeira abertura, o aplicativo copia `memoria.db` da pasta do projeto
-quando ela está disponível em `%USERPROFILE%\assistente_ia`. Se o projeto
-estiver em outro lugar, feche o aplicativo e copie o banco existente para
-`%LOCALAPPDATA%\AssistenteIA\memoria.db` antes de abrir novamente.
+Cada execução bem-sucedida do instalador, inclusive atualizações e reinstalações,
+zera a memória instalada: apaga `memoria.db`, seus diários SQLite e a pasta
+`backups/` em `%LOCALAPPDATA%\AssistenteIA`. A primeira abertura confirma a
+limpeza antes de conectar ao banco e cria uma memória vazia. A cópia automática
+de bancos antigos foi removida. Configurações, chaves de API e arquivos de
+trabalho não são apagados. A desinstalação isolada não limpa esses dados; a
+próxima instalação limpa a memória.
 
 O modo antigo por terminal continua disponível com `python main.py`.
 
@@ -73,12 +74,24 @@ o instalador e o SHA-256. Um segundo runner Windows baixa esses arquivos,
 confere o hash, instala em uma pasta temporária, abre o executável empacotado,
 desinstala e verifica que a pasta do programa foi removida enquanto os dados do
 usuário foram preservados. Os dois arquivos ficam disponíveis juntos como
-artefato **assistente-ia-windows** por 14 dias. O workflow não publica Release:
-para distribuir, publique o mesmo `.exe` e `.sha256` após revisar o resultado.
+artefato **assistente-ia-windows** por 14 dias. Ao enviar uma tag `vX.Y.Z`
+correspondente à versão do código e do instalador, o workflow confere que ela
+aponta para um commit de `main` e cria uma **Release Beta em rascunho** com o
+mesmo `.exe` e `.sha256`. Revise as notas e publique manualmente após os testes
+em uma máquina Windows limpa. Pushes comuns não criam releases.
 
 O runner tem ferramentas de desenvolvimento instaladas e não substitui o teste
 em um Windows realmente limpo, sem Python e sem Ollama. Esse teste manual está
 descrito em [Testes de integração](docs/TESTES_INTEGRACAO.md).
-O instalador atual não possui assinatura digital; uma futura versão assinada
-exige certificado de assinatura de código. O SHA-256 comprova integridade em
-relação ao arquivo publicado, mas não substitui uma assinatura.
+Builds locais continuam sem assinatura enquanto não houver certificado.
+Releases por tag exigem PFX Authenticode nos secrets do repositório: o CI assina
+o aplicativo e o instalador, valida ambos e bloqueia o rascunho se faltarem
+credenciais ou a assinatura não for válida. O instalador atual, gerado antes de
+configurar certificado, permanece sem assinatura. O SHA-256 não comprova autoria.
+
+## Preparar uma release Beta
+
+Siga o [checklist de release](docs/RELEASE.md) antes de criar a tag. A tag deve
+apontar para o commit de `main` que contém a versão correspondente em
+`app/versao.py` e `installer/AssistenteIA.iss`. O workflow só monta o rascunho;
+nenhuma versão é publicada sem revisão manual.

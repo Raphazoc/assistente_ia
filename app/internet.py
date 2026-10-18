@@ -13,7 +13,6 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import zip_longest
-from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.parse import urlencode
@@ -21,10 +20,10 @@ from urllib.request import Request, urlopen
 
 import certifi
 import httpcore
-from . import diagnostico, servicos
+from . import caminhos, diagnostico, servicos
 
 
-CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_internet.json"
+CONFIGURACAO = caminhos.pasta_dados() / "config_internet.json"
 MAX_CONSULTAS = 2
 MAX_RESULTADOS = 5
 MAX_PAGINAS = 3
@@ -101,6 +100,7 @@ def habilitada():
 
 def definir_habilitada(ativa):
     """Grava de forma atômica a preferência de pesquisa na internet."""
+    CONFIGURACAO.parent.mkdir(parents=True, exist_ok=True)
     temporario = CONFIGURACAO.with_suffix(".tmp")
     temporario.write_text(json.dumps({"ativa": bool(ativa)}, indent=2) + "\n", encoding="utf-8")
     temporario.replace(CONFIGURACAO)

@@ -6,10 +6,11 @@ import os
 import threading
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
+
+from . import caminhos
 
 
-PASTA_LOGS = Path(__file__).resolve().parent.parent / "logs"
+PASTA_LOGS = caminhos.pasta_dados() / "logs"
 _logger = None
 _trava = threading.RLock()
 EVENTOS = {

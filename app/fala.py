@@ -102,7 +102,6 @@ def dividir_texto(texto):
 
 def gerar_audio_online(texto):
     """Recebe MP3 e converte para PCM em memória, sem player externo."""
-    import av
     import edge_tts
 
     comunicador = edge_tts.Communicate(
@@ -153,6 +152,7 @@ def gerar_audio_elevenlabs(texto):
 
 def decodificar_mp3(mp3):
     """Converte MP3 recebido dos provedores em PCM para a saída de áudio."""
+    import av
 
     conversor = av.AudioResampler(format="s16", layout="mono", rate=TAXA_AUDIO_ONLINE)
     partes = []

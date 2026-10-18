@@ -13,21 +13,31 @@ Ela não envia conversas nem chaves de API durante essa verificação.
    ollama pull qwen3-embedding:0.6b
    ```
 
-3. Clique em **Verificar novamente**. Você também pode escolher outros modelos
+3. Clique em **Verificar ambiente**. Você também pode escolher outros modelos
    já instalados nas listas de conversa e memória.
 4. Selecione o idioma, o limite de histórico e se deseja habilitar pesquisas.
    Mesmo habilitadas, as pesquisas pedem autorização individual.
-5. Use **Testar microfone**, **Testar alto-falante** e **Testar voz**. Os testes
+5. Na aba **Voz**, escolha o microfone ou mantenha **Padrão do sistema**. Use
+   **Atualizar microfones** se acabou de conectar um dispositivo. A lista
+   recomendada remove duplicatas e entradas incompatíveis com a captura;
+   **Mostrar todas as entradas** revela as opções técnicas. Veja qual é o
+   padrão do Windows e use **Testar este microfone** falando por dois segundos
+   antes de salvar. Teste também o alto-falante e a voz. Os testes
    de áudio não guardam a gravação do microfone.
 6. Clique em **Salvar e continuar**. A conversa só inicia quando os dois
    modelos escolhidos estão disponíveis no Ollama local.
 
 Depois, o botão **Configurações** abre a mesma janela, agora organizada nas abas
 **Geral**, **Pesquisa**, **Voz** e **Diagnóstico**. Na aba Geral você altera
-modelos, idioma e limite de histórico. Pesquisa permite ativar ou desativar
+modelos, idioma, limite de histórico e aviso de atualizações. Pesquisa permite ativar ou desativar
 buscas e escolher DuckDuckGo ou Brave Search. Voz escolhe Edge ou ElevenLabs,
-permite testar os dispositivos e configurar o ID da voz. O filtro +18 e a
+permite selecionar e testar o microfone e configurar o ID da voz. O filtro +18 e a
 autorização por pesquisa continuam ativos independentemente do provedor.
+
+O limite de histórico aceita de 10 a 2000 mensagens; o padrão de uma nova
+instalação é 500. Quem já configurou o aplicativo pode alterar esse valor na
+aba **Geral**. O tamanho enviado ao modelo continua limitado para manter a
+resposta rápida. As abas podem ser roladas quando a janela estiver menor.
 
 As chaves Brave e ElevenLabs ficam no cofre de credenciais do Windows. Os
 campos de nova chave aparecem vazios mesmo quando uma chave já existe. Deixe
@@ -39,7 +49,7 @@ inclui mensagens de conversa, chaves de API nem o nome da conta do Windows.
 **Abrir pasta de dados** leva aos arquivos locais para investigar uma falha.
 Se o Ollama cair depois da configuração inicial, ainda é
 possível salvar idioma, histórico, pesquisa e voz; para mudar os modelos, abra
-o Ollama e use **Verificar novamente**.
+o Ollama e use **Verificar ambiente**.
 
 O arquivo principal fica em `%LOCALAPPDATA%\AssistenteIA\config_geral.json`.
 Se um campo estiver inválido, o aplicativo mostra qual campo precisa ser
@@ -48,7 +58,7 @@ arquivos separados na mesma pasta. A memória está em `memoria.db` e os logs
 técnicos em `logs\assistente.log`.
 
 Se o servidor aparecer indisponível, confira se o Ollama está aberto e use
-**Verificar novamente**. Se um modelo aparecer ausente, escolha outro já
+**Verificar ambiente**. Se um modelo aparecer ausente, escolha outro já
 instalado ou execute `ollama pull NOME`. Se o microfone ou a saída de áudio não
 forem detectados, confira o dispositivo padrão e as permissões de microfone do
 Windows. A digitação pode ser usada sem microfone ou alto-falante.

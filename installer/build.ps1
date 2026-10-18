@@ -25,6 +25,10 @@ try {
     $aplicativo = Join-Path $raizProjeto 'dist\AssistenteIA\AssistenteIA.exe'
     $verificacao = Start-Process -FilePath $aplicativo -ArgumentList '--smoke-test' -Wait -PassThru -WindowStyle Hidden
     if ($verificacao.ExitCode -ne 0) { throw 'O aplicativo empacotado não passou no teste de abertura.' }
+    if ($env:ASSISTENTE_SIGNING_REQUIRED -eq '1') {
+        & (Join-Path $PSScriptRoot 'sign.ps1') -Arquivo $aplicativo
+        if ($LASTEXITCODE -ne 0) { throw 'Falha na assinatura do aplicativo.' }
+    }
     if ($SomenteAplicativo) { return }
 
     $candidatos = @(
@@ -47,6 +51,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao gerar o instalador.' }
     $instalador = Join-Path $raizProjeto 'dist-installer\AssistenteIA-Setup.exe'
     if (-not (Test-Path -LiteralPath $instalador)) { throw 'Instalador não encontrado após a compilação.' }
+    if ($env:ASSISTENTE_SIGNING_REQUIRED -eq '1') {
+        & (Join-Path $PSScriptRoot 'sign.ps1') -Arquivo $instalador
+        if ($LASTEXITCODE -ne 0) { throw 'Falha na assinatura do instalador.' }
+    }
     $sha256 = (Get-FileHash -LiteralPath $instalador -Algorithm SHA256).Hash.ToLowerInvariant()
     $manifesto = "$instalador.sha256"
     Set-Content -LiteralPath $manifesto -Value "$sha256  AssistenteIA-Setup.exe" -Encoding ascii

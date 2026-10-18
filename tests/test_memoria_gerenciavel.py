@@ -172,7 +172,7 @@ class MemoriaGerenciavelTests(unittest.TestCase):
             solicitar.assert_called_once_with("listar")
             janela.eventos.put(("memoria_dados", memoria.painel(self.conexao)))
             janela._processar_eventos()
-            self.assertEqual(janela.janela_memoria.estado["text"].split()[0], "0")
+            self.assertEqual(janela.janela_memoria.estado.cget("text").split()[0], "0")
         finally:
             janela.fechar()
 

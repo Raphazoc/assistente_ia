@@ -2,6 +2,7 @@ import contextlib
 import io
 import math
 import sqlite3
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -112,6 +113,76 @@ class CapturaVozTests(unittest.TestCase):
         self.assertGreater(audio.size, 0)
         stream.return_value.__exit__.assert_called_once()
 
+    def test_microfone_escolhido_e_usado_na_captura(self):
+        dispositivos = [
+            {"name": "Caixas", "hostapi": 0, "max_input_channels": 0},
+            {"name": "Microfone USB", "hostapi": 0, "max_input_channels": 1},
+        ]
+        with (patch.object(voz.sd, "query_devices", return_value=dispositivos),
+              patch.object(voz.sd, "query_hostapis", return_value=[{"name": "WASAPI"}]),
+              patch.object(voz.sd, "check_input_settings"),
+              patch.object(voz, "MICROFONE_SELECIONADO", "Microfone USB · WASAPI"),
+              patch.object(voz, "DetectorVoz"),
+              patch.object(voz.sd, "InputStream") as stream):
+            cancelar = threading.Event()
+            cancelar.set()
+            self.assertIsNone(voz.capturar_audio(cancelar=cancelar, teclado=False, anunciar=False))
+            self.assertEqual(stream.call_args.kwargs["device"], 1)
+
+    def test_microfone_removido_nao_troca_para_o_padrao(self):
+        with (patch.object(voz.sd, "query_devices", return_value=[]),
+              patch.object(voz.sd, "query_hostapis", return_value=[]),
+              patch.object(voz, "MICROFONE_SELECIONADO", "Microfone USB · WASAPI"),
+              patch.object(voz.sd, "InputStream") as stream):
+            with self.assertRaisesRegex(RuntimeError, "não está disponível"):
+                voz.resolver_microfone()
+            stream.assert_not_called()
+
+    def test_lista_recomendada_remove_alias_e_repeticoes_sem_perder_dispositivos(self):
+        apis = [{"name": "MME"}, {"name": "Windows DirectSound"},
+                {"name": "Windows WASAPI"}, {"name": "Windows WDM-KS"}]
+        entradas = [
+            {"name": "Mapeador de som da Microsoft - Input", "hostapi": 0, "max_input_channels": 2},
+            {"name": "Microfone (WEBCAM)", "hostapi": 0, "max_input_channels": 1},
+            {"name": "Microfone (L80)", "hostapi": 0, "max_input_channels": 1},
+            {"name": "Driver de captura de som primário", "hostapi": 1, "max_input_channels": 2},
+            {"name": "Microfone (WEBCAM)", "hostapi": 1, "max_input_channels": 1},
+            {"name": "Microfone (WEBCAM)", "hostapi": 2, "max_input_channels": 1},
+            {"name": "Microfone (L80)", "hostapi": 2, "max_input_channels": 1},
+            {"name": "Microfone (HD Audio Mixed capture)", "hostapi": 3, "max_input_channels": 2},
+        ]
+        with patch.object(voz.sd, "query_devices", return_value=entradas), \
+             patch.object(voz.sd, "query_hostapis", return_value=apis), \
+             patch.object(voz.sd, "check_input_settings"), \
+             patch.object(voz.sd, "default") as padrao:
+            padrao.device = [1, 0]
+            recomendados = voz.listar_microfones_recomendados()
+            self.assertEqual(recomendados, [
+                ("Microfone (WEBCAM) · Windows WASAPI", 5),
+                ("Microfone (L80) · Windows WASAPI", 6),
+            ])
+            self.assertEqual(voz.nome_microfone_padrao(), "Microfone (WEBCAM) · MME")
+            self.assertEqual(voz.resolver_microfone("Microfone (WEBCAM) · MME"), 1)
+
+    def test_lista_recomendada_nao_oferece_api_incompativel_com_captura(self):
+        entradas = [
+            {"name": "Microfone USB", "hostapi": 0, "max_input_channels": 1},
+            {"name": "Microfone USB", "hostapi": 1, "max_input_channels": 1},
+        ]
+        def verificar(**dados):
+            if dados["device"] == 1:
+                raise voz.sd.PortAudioError("Invalid sample rate")
+        with patch.object(voz.sd, "query_devices", return_value=entradas), \
+             patch.object(voz.sd, "query_hostapis", return_value=[{"name": "Windows DirectSound"},
+                                                               {"name": "Windows WASAPI"}]), \
+             patch.object(voz.sd, "check_input_settings", side_effect=verificar), \
+             patch.object(voz.sd, "default") as padrao:
+            padrao.device = [0, 0]
+            self.assertEqual(voz.listar_microfones_recomendados(),
+                             [("Microfone USB · Windows DirectSound", 0)])
+            with self.assertRaisesRegex(RuntimeError, "16 kHz"):
+                voz.resolver_microfone("Microfone USB · Windows WASAPI")
+
     def test_silencio_nao_e_enviado_ao_whisper(self):
         with (
             patch.object(voz, "capturar_audio", return_value=np.empty(0, dtype=np.float32)),
@@ -180,6 +251,24 @@ class TrocaModoTests(unittest.TestCase):
                 self.assertIn("Modo texto ativado.", saida.getvalue())
                 self.assertIn("Modo microfone ativado.", saida.getvalue())
                 resposta.assert_not_called()
+
+
+class CancelamentoTranscricaoTests(unittest.TestCase):
+    def test_cancelar_antes_de_transcrever_evita_modelo(self):
+        cancelar = threading.Event()
+        with patch.object(voz, "capturar_audio", return_value=np.ones(1600, dtype=np.float32)), \
+                patch.object(voz, "transcrever_audio") as transcrever:
+            self.assertEqual(voz.ouvir(cancelar=cancelar, ao_capturar=cancelar.set), "")
+        transcrever.assert_not_called()
+
+    def test_cancelar_durante_transcricao_descarta_texto(self):
+        cancelar = threading.Event()
+        def transcrever(_audio):
+            cancelar.set()
+            return "texto tardio"
+        with patch.object(voz, "capturar_audio", return_value=np.ones(1600, dtype=np.float32)), \
+                patch.object(voz, "transcrever_audio", side_effect=transcrever):
+            self.assertEqual(voz.ouvir(cancelar=cancelar), "")
 
 
 if __name__ == "__main__":

@@ -21,6 +21,18 @@ Há duas formas de uso:
 
 ## Visão geral
 
+Veja a [prévia visual da nova interface](./docs/interface-conceito.png) e as
+[capturas do aplicativo em Texto](./docs/interface-texto-real.png) e
+[Voz](./docs/interface-voz-real.png). A prévia é um conceito; as capturas mostram
+a implementação atual no Windows. As abas mantêm texto e voz separados, e cada
+mensagem aparece em um cartão próprio. A interface usa CustomTkinter para os
+painéis, botões e rolagem arredondados.
+
+Veja também as abas reais de [Configurações](./docs/interface-configuracoes-real.png),
+[Pesquisa](./docs/interface-configuracoes-pesquisa.png),
+[Voz](./docs/interface-configuracoes-voz.png) e
+[Diagnóstico](./docs/interface-configuracoes-diagnostico.png).
+
 O assistente oferece:
 
 - Conversa em modo texto ou microfone.
@@ -53,6 +65,10 @@ O fluxo principal está concentrado em `main.py`, que coordena os módulos:
 | `app/memoria.py` | Fatos persistentes, escopos, busca e gerenciamento da memória |
 | `app/resumos.py` | Resumos de conversas antigas e recuperação histórica |
 | `app/banco.py` | Backups, integridade e restauração do SQLite |
+| `app/conversa.py` | Ordem compartilhada de ação, pesquisa e resposta no desktop e terminal |
+| `app/servico_ollama.py` | Chamadas locais, retry e diagnóstico do Ollama |
+| `app/contexto_memoria.py` | Seleção e limites do contexto de memória |
+| `app/coordenador_acoes.py` | Confirmação e execução de ações locais |
 | `app/internet.py` | Planejamento, busca, leitura e filtragem de fontes |
 | `app/acoes.py` | Planejamento, confirmação, validação e execução de ações locais |
 | `app/voz.py` | Captura e transcrição de áudio com Faster-Whisper |
@@ -255,10 +271,19 @@ Na primeira abertura, siga o [guia de configuração](docs/PRIMEIRA_EXECUCAO.md)
 para verificar o Ollama, escolher modelos e testar o áudio.
 Depois, use **Configurações** para ajustar modelos, idioma, histórico,
 pesquisa e voz na mesma janela, além de consultar o diagnóstico.
+Em **Configurações → Voz**, a lista inicial mostra um microfone por dispositivo
+que aceita a captura de voz, sem repetições de APIs de áudio. A tela identifica
+o microfone padrão do Windows; use **Testar este microfone** falando por dois
+segundos e salve o que captar sua voz. **Mostrar todas as entradas** exibe as
+opções técnicas para diagnóstico, e **Atualizar microfones** detecta aparelhos
+recém-conectados. O ícone do aplicativo também aparece na janela e nos atalhos.
 Ela tem abas separadas para Texto e Voz: a conversa escrita ocupa a área
 principal, e a aba Voz mostra a escuta, seus controles e a transcrição.
-O botão **Memória** abre o gerenciamento visual de lembranças, histórico e
-resumos. Na escrita, **Não salvar esta troca** evita gravar aquela pergunta e
+O botão **Memória** abre o gerenciamento visual: filtre ou busque lembranças,
+selecione uma para editar ou excluir, e use a aba **Editar** para criar uma nova.
+Histórico e resumos têm lista e leitura lado a lado. A janela mantém essas ações
+acessíveis mesmo no tamanho mínimo. Veja a [captura da aba Memória](./docs/interface-memoria-real.png).
+Na escrita, **Não salvar esta troca** evita gravar aquela pergunta e
 resposta. Exemplos em blocos Markdown aparecem com fonte monoespaçada, cores
 de sintaxe e comando para copiar o código.
 
@@ -284,14 +309,27 @@ Também é possível abrir o menu digitando `menu` ou pressionando `Esc`.
 
 #### Download
 
-Baixe a versão mais recente do instalador para Windows:
+Baixe o instalador da release Beta publicada mais recente:
 
-[**Baixar AssistenteIA para Windows**](https://github.com/Raphazoc/assistente_ia/releases/latest/download/AssistenteIA-Setup.exe)
+[**Releases do Assistente IA para Windows**](https://github.com/Raphazoc/assistente_ia/releases)
+
+O aplicativo pode verificar novas versões publicadas ao iniciar. Esse aviso pode
+ser desativado em **Configurações → Geral**; o botão **Verificar versão** permite
+uma consulta manual. Quando houver uma versão nova, clique no aviso para ler as
+notas e escolher se deseja abrir a página oficial da release. O aplicativo não
+baixa nem instala atualizações por conta própria. A consulta usa apenas a API
+pública de releases do GitHub e não envia conversas nem chaves de API.
+O botão mostra o resultado da última consulta e permite cancelar uma consulta
+em andamento. Quando houver atualização, a janela informa se é Beta; você pode
+abrir a release ou selecionar o instalador baixado para conferir o SHA-256 da
+release e a assinatura Authenticode antes de executá-lo. Versões iguais ou mais
+antigas são recusadas nessa verificação.
 
 O instalador inclui o aplicativo, o Python, as dependências e o modelo local
 de voz Piper. O Ollama e os modelos de linguagem continuam sendo instalados
-separadamente. Se o link acima ainda não estiver disponível, use a página de
-[releases do projeto](https://github.com/Raphazoc/assistente_ia/releases).
+separadamente. Na release, baixe `AssistenteIA-Setup.exe` e confira o SHA-256
+com o arquivo `.sha256` publicado junto. As versões Beta não aparecem no
+atalho `releases/latest` do GitHub.
 
 #### Gerar o instalador
 
@@ -317,6 +355,17 @@ O aplicativo desktop mantém os dados do usuário em
 `%USERPROFILE%\Documents\AssistenteIA`. O instalador não inclui nem inicia o
 Ollama automaticamente: o serviço e os modelos precisam estar instalados
 separadamente.
+
+O desktop, o terminal (`python main.py`) e `python -m app.banco` usam o mesmo
+`%LOCALAPPDATA%\AssistenteIA\memoria.db`. Feche o aplicativo antes de restaurar
+um backup. A configuração inicial mostra **Verificar ambiente**: consulta Ollama,
+modelos, versão, dispositivos, RAM e VRAM NVIDIA (quando disponível).
+
+`requirements-prod.txt` e `requirements-voz.txt` fixam as dependências diretas;
+`requirements-ci.txt` fixa também as transitivas para testes e empacotamento
+Windows. O CI executa Ruff, mypy e cobertura mínima dos módulos críticos em
+Python 3.13 e 3.14. Atualizações são verificadas semanalmente em um workflow
+separado e exigem revisão antes de alterar o lock.
 
 O instalador gerado localmente fica em:
 
@@ -370,7 +419,13 @@ informação...`.
 ## Memória persistente
 
 As mensagens e lembranças são armazenadas no banco local `memoria.db`, que não
-deve ser versionado. A memória possui:
+deve ser versionado.
+
+**Ao instalar ou atualizar pelo instalador Windows, a memória instalada é
+zerada**, inclusive histórico, resumos e backups. Configurações e chaves
+permanecem. O aplicativo não importa mais automaticamente um banco antigo.
+
+A memória possui:
 
 - Fatos e preferências duráveis.
 - Associação entre lembranças e mensagens de origem.
@@ -483,6 +538,11 @@ não impede o uso do modo texto.
 
 O assistente cria backups automáticos do SQLite em `backups/`, mantendo as
 últimas cópias automáticas conforme a política do módulo `app/banco.py`.
+Se encontrar cópias históricas na antiga pasta `backyp`, move-as com verificação
+de hash para `backups/legado`. Novas cópias da migração também são arquivadas
+em `backups/legado`; o programa não cria mais arquivos em `backyp`. Essas cópias
+de esquema antigo são arquivos históricos e não aparecem na lista de restauração
+do esquema atual.
 
 Listar backups:
 
@@ -553,35 +613,24 @@ python -m pytest tests/test_memoria.py
 python -m pytest tests/test_internet.py
 ```
 
-## Estrutura do reposit?rio
+## Estrutura do repositório
 
 ```text
 .
-??? app/                    # C?digo principal da assistente
-?   ??? main.py             # Ciclo principal e integra??o dos recursos
-?   ??? aplicativo.py       # Interface desktop Windows
-?   ??? acoes.py            # A??es locais confirmadas
-?   ??? memoria.py          # Mem?ria e recupera??o
-?   ??? resumos.py          # Resumos persistentes
-?   ??? internet.py         # Pesquisa autorizada
-?   ??? banco.py            # Backup e restaura??o
-?   ??? voz.py              # Reconhecimento de fala
-?   ??? fala.py             # S?ntese de fala
-?   ??? ativacao.py         # Palavra de ativa??o
-?   ??? controles.py        # Teclado e controles
-?   ??? diagnostico.py      # Logs t?cnicos
-??? resources/              # Configura??es e modelos distribu?dos
-?   ??? config_voz.json
-?   ??? config_internet.json
-?   ??? vozes/
-??? legacy/                 # Vers?es antigas mantidas para refer?ncia
-??? docs/                   # Documenta??o dos subsistemas
-??? tests/                  # Testes automatizados
-??? installer/              # Script de empacotamento Windows
-??? AssistenteIA.spec       # Configura??o do PyInstaller
-??? INSTALACAO.md           # Empacotamento e instala??o
-??? requirements.txt        # Depend?ncias gerais
-??? requirements-voz.txt    # Depend?ncias de ?udio e voz
+|-- app/                    # Código principal da assistente
+|   |-- main.py             # Ciclo principal e integração dos recursos
+|   |-- aplicativo.py       # Interface desktop Windows
+|   |-- memoria.py          # Memória e recuperação
+|   |-- internet.py         # Pesquisa autorizada
+|   `-- voz.py              # Reconhecimento de fala
+|-- resources/              # Configurações e modelos distribuídos
+|-- legacy/                 # Versões antigas mantidas para referência
+|-- docs/                   # Documentação dos subsistemas
+|-- tests/                  # Testes automatizados
+|-- installer/              # Empacotamento Windows
+|-- AssistenteIA.spec       # Configuração do PyInstaller
+|-- INSTALACAO.md           # Empacotamento e instalação
+`-- requirements.txt        # Dependências gerais
 ```
 
 ## Privacidade e segurança
@@ -600,6 +649,8 @@ distintos:
 
 Revise `app/fala.py`, `app/internet.py` e as configurações locais antes de usar o
 projeto em um ambiente com requisitos específicos de privacidade.
+Consulte também a [política de privacidade](./PRIVACIDADE.md) e as
+[orientações de segurança](./SECURITY.md).
 
 ## Limitações conhecidas
 
@@ -627,6 +678,7 @@ Antes de propor alterações:
 
 Pull requests devem explicar o problema, a solução, os impactos de privacidade
 e como a alteração foi validada.
+Veja [CONTRIBUTING.md](./CONTRIBUTING.md) para o fluxo de contribuição.
 
 ## Documentação complementar
 
@@ -636,6 +688,11 @@ As explicações detalhadas de cada subsistema ficam na pasta [`docs/`](./docs/)
 - [Pesquisa na internet](./docs/INTERNET.md)
 - [Voz e áudio](./docs/VOZ.md)
 - [Confiabilidade, diagnóstico e recuperação](./docs/CONFIABILIDADE.md)
+- [Configurações](./docs/CONFIGURACAO.md)
+- [Solução de problemas](./docs/PROBLEMAS.md)
+- [Escopo da versão Beta](./docs/BETA.md)
+- [Checklist de release Beta](./docs/RELEASE.md)
+- [Histórico de mudanças](./CHANGELOG.md)
 
 ## Licença
 

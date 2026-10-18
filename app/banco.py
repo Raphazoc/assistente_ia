@@ -1,6 +1,7 @@
 """Backup SQLite validado e restauração manual com cópia de segurança."""
 
 import argparse
+import hashlib
 from contextlib import closing
 import os
 import re
@@ -11,17 +12,48 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from . import diagnostico
+from . import caminhos, diagnostico
 
 
 INTERVALO_BACKUP = timedelta(hours=24)
 RETENCAO_AUTOMATICA = 7
 NOME_BACKUP = re.compile(r"^(?:automatico|manual|antes_restauro)_\d{8}T\d{6}Z_[0-9a-f]{8}\.db$")
+NOME_LEGADO = re.compile(r"^memoria_antes_v2_\d{8}_\d{6}_\d{6}_UTC\.db$")
 
 
 def pasta_backups(caminho_banco):
     """Retorna a pasta reservada às cópias do banco informado."""
     return Path(caminho_banco).resolve().parent / "backups"
+
+
+def migrar_backyp(caminho_banco):
+    """Arquiva cópias históricas de `backyp` sem criar novas cópias ali."""
+    origem = Path(caminho_banco).resolve().parent / "backyp"
+    if not origem.is_dir() or origem.is_symlink():
+        return 0
+    destino = pasta_backups(caminho_banco) / "legado"
+    movidos = 0
+    for antigo in origem.iterdir():
+        if not NOME_LEGADO.fullmatch(antigo.name) or not antigo.is_file() or antigo.is_symlink():
+            continue
+        destino.mkdir(parents=True, exist_ok=True)
+        novo = destino / antigo.name
+        if novo.exists():
+            continue
+        temporario = destino / (antigo.name + ".tmp")
+        try:
+            shutil.copy2(antigo, temporario)
+            def digest(arquivo):
+                with arquivo.open("rb") as entrada:
+                    return hashlib.file_digest(entrada, "sha256").digest()
+            if digest(antigo) != digest(temporario):
+                raise OSError("A cópia legada não passou na verificação de integridade.")
+            temporario.replace(novo)
+            antigo.unlink()
+            movidos += 1
+        finally:
+            temporario.unlink(missing_ok=True)
+    return movidos
 
 
 def _conexao_corresponde(conexao, caminho_banco):
@@ -131,7 +163,7 @@ def main():
     argumentos.add_argument("acao", choices=("listar", "backup", "restaurar"))
     argumentos.add_argument("nome", nargs="?", help="Nome retornado por 'listar'")
     opcoes = argumentos.parse_args()
-    caminho = Path(__file__).resolve().parent.parent / "memoria.db"
+    caminho = caminhos.caminho_banco()
     if opcoes.acao == "listar":
         copias = listar_backups(caminho)
         print("\n".join(p.name for p in copias) if copias else "Nenhum backup disponível.")

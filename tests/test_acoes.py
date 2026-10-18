@@ -1,6 +1,8 @@
 import contextlib
 import io
+import os
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -50,6 +52,57 @@ class AcoesTests(unittest.TestCase):
         acoes.executar(plano, self.raiz, Mock())
         self.assertFalse((self.raiz / "nota.txt").exists())
         self.assertEqual((self.raiz / "novo.txt").read_text(encoding="utf-8"), "teste")
+
+    def test_unc_e_subpasta_protegida_sao_recusados(self):
+        (self.raiz / "nota.txt").write_text("teste", encoding="utf-8")
+        (self.raiz / ".GiT").mkdir()
+        with self.assertRaisesRegex(ValueError, "UNC"):
+            acoes.validar(acoes.PlanoAcao("ler_arquivo", r"\\servidor\pasta\nota.txt"), self.raiz)
+        with self.assertRaisesRegex(ValueError, "reservada"):
+            acoes.validar(acoes.PlanoAcao("listar_pasta", ".GiT"), self.raiz)
+        with self.assertRaisesRegex(ValueError, "reservada"):
+            acoes.validar(acoes.PlanoAcao("mover_arquivo", "nota.txt", ".GiT/filho/nota.txt"), self.raiz)
+
+    def test_arquivo_mudado_apos_confirmacao_exige_nova_autorizacao(self):
+        origem = self.raiz / "nota.txt"
+        origem.write_text("original", encoding="utf-8")
+        plano = acoes.validar(acoes.PlanoAcao("mover_arquivo", "nota.txt", "novo.txt"), self.raiz)
+        origem.write_text("alterado pelo outro processo", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "mudou após a confirmação"):
+            acoes.executar(plano, self.raiz, Mock())
+        self.assertFalse((self.raiz / "novo.txt").exists())
+        self.assertEqual(origem.read_text(encoding="utf-8"), "alterado pelo outro processo")
+
+    def test_destino_trocado_por_link_apos_confirmacao_e_recusado(self):
+        (self.raiz / "nota.txt").write_text("teste", encoding="utf-8")
+        pasta = self.raiz / "destino"
+        pasta.mkdir()
+        plano = acoes.validar(acoes.PlanoAcao("mover_arquivo", "nota.txt", "destino/novo.txt"), self.raiz)
+        pasta.rmdir()
+        try:
+            pasta.symlink_to(self.raiz.parent, target_is_directory=True)
+        except (OSError, NotImplementedError):
+            if os.name != "nt":
+                self.skipTest("Criação de symlink não autorizada")
+            comando = subprocess.run(["cmd", "/c", "mklink", "/J", str(pasta), str(self.raiz.parent)],
+                                     capture_output=True, text=True, check=False)
+            if comando.returncode != 0:
+                self.skipTest("Criação de link/junction não autorizada")
+        with self.assertRaises(ValueError):
+            acoes.executar(plano, self.raiz, Mock())
+        self.assertTrue((self.raiz / "nota.txt").exists())
+
+    @unittest.skipUnless(os.name == "nt", "Junctions são específicas do Windows")
+    def test_junction_windows_e_recusada(self):
+        alvo = self.raiz / "alvo"
+        alvo.mkdir()
+        junction = self.raiz / "atalho"
+        comando = subprocess.run(["cmd", "/c", "mklink", "/J", str(junction), str(alvo)],
+                                 capture_output=True, text=True, check=False)
+        if comando.returncode != 0:
+            self.skipTest("Junction indisponível no ambiente de teste")
+        with self.assertRaisesRegex(ValueError, "junctions"):
+            acoes.validar(acoes.PlanoAcao("listar_pasta", "atalho"), self.raiz)
 
     def test_leitura_nao_envia_conteudo_ao_modelo_ou_a_voz(self):
         (self.raiz / "nota.txt").write_text("conteúdo privado", encoding="utf-8")

@@ -13,10 +13,12 @@ dados = [
     (str(raiz / "resources" / "config_internet.json"), "resources"),
     (str(raiz / "resources" / "config_servicos.json"), "resources"),
     (str(raiz / "resources" / "config_geral.json"), "resources"),
+    (str(raiz / "resources" / "assistente_ia.ico"), "resources"),
+    (str(raiz / "resources" / "assistente_ia.png"), "resources"),
 ]
 binarios = []
 ocultos = []
-for pacote in ("faster_whisper", "piper", "onnxruntime", "ctranslate2", "sounddevice", "av", "edge_tts", "keyring", "pygments"):
+for pacote in ("faster_whisper", "piper", "onnxruntime", "ctranslate2", "sounddevice", "av", "edge_tts", "keyring", "pygments", "customtkinter"):
     dados_pacote, binarios_pacote, ocultos_pacote = collect_all(pacote)
     dados.extend(dados_pacote)
     binarios.extend(binarios_pacote)
@@ -41,6 +43,7 @@ executavel = EXE(
     [],
     exclude_binaries=True,
     name="AssistenteIA",
+    icon=str(raiz / "resources" / "assistente_ia.ico"),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

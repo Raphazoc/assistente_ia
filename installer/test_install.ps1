@@ -44,7 +44,9 @@ try {
         $executavel,
         (Join-Path $recursos 'vozes\pt_BR-faber-medium.onnx'),
         (Join-Path $recursos 'config_geral.json'),
-        (Join-Path $recursos 'config_servicos.json')
+        (Join-Path $recursos 'config_servicos.json'),
+        (Join-Path $recursos 'assistente_ia.ico'),
+        (Join-Path $recursos 'assistente_ia.png')
     )) {
         if (-not (Test-Path -LiteralPath $necessario -PathType Leaf)) {
             throw "Recurso ausente após instalar: $(Split-Path -Leaf $necessario)."
@@ -54,6 +56,28 @@ try {
     if ($abertura.ExitCode -ne 0) { throw 'O aplicativo instalado não passou no teste de abertura.' }
 
     New-Item -ItemType Directory -Path $dadosUsuario -Force | Out-Null
+    $bancoTeste = Join-Path $dadosUsuario 'memoria.db'
+    $diarioTeste = Join-Path $dadosUsuario 'memoria.db-wal'
+    $backupsTeste = Join-Path $dadosUsuario 'backups'
+    $configuracaoTeste = Join-Path $dadosUsuario 'config_geral.json'
+    Set-Content -LiteralPath $bancoTeste -Value 'memoria anterior' -Encoding utf8
+    Set-Content -LiteralPath $diarioTeste -Value 'diario anterior' -Encoding utf8
+    New-Item -ItemType Directory -Path $backupsTeste -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $backupsTeste 'copia.db') -Value 'backup anterior' -Encoding utf8
+    Set-Content -LiteralPath $configuracaoTeste -Value 'configuracao preservada' -Encoding utf8
+    $atualizacao = Start-Process -FilePath $arquivo -ArgumentList @(
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=`"$destino`""
+    ) -Wait -PassThru -WindowStyle Hidden
+    if ($atualizacao.ExitCode -ne 0) { throw "Reinstalação falhou (código $($atualizacao.ExitCode))." }
+    foreach ($antigo in @($bancoTeste, $diarioTeste, $backupsTeste)) {
+        if (Test-Path -LiteralPath $antigo) { throw "Memória antiga permaneceu após reinstalar: $antigo" }
+    }
+    if ((Get-Content -LiteralPath $configuracaoTeste -Raw).Trim() -ne 'configuracao preservada') {
+        throw 'A reinstalação alterou a configuração do usuário.'
+    }
+    if (-not (Test-Path -LiteralPath (Join-Path $dadosUsuario 'reiniciar_memoria.flag'))) {
+        throw 'O instalador não marcou a primeira abertura para confirmação da limpeza.'
+    }
     $sentinela = Join-Path $dadosUsuario 'dados-do-usuario-teste.txt'
     Set-Content -LiteralPath $sentinela -Value 'preservar após desinstalar' -Encoding utf8
     Write-Host 'Instalação e abertura do executável: OK.'
@@ -84,6 +108,7 @@ if ($sobras.Count -gt 0) { throw 'Arquivos do programa permaneceram após a desi
 Write-Host 'Desinstalação removeu o programa e preservou os dados do usuário: OK.'
 Write-Host "Assinatura digital: $((Get-AuthenticodeSignature -FilePath $arquivo).Status)"
 Remove-Item -LiteralPath $sentinela
+Remove-Item -LiteralPath $configuracaoTeste
 if (@(Get-ChildItem -LiteralPath $dadosUsuario -Force).Count -eq 0) {
     Remove-Item -LiteralPath $dadosUsuario
 }

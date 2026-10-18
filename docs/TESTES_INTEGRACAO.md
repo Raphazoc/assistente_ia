@@ -24,7 +24,8 @@ empacotado, conferindo a abertura da janela e os recursos incluídos. No GitHub
 Actions, `installer\test_install.ps1` verifica o SHA-256 e faz instalação,
 abertura e desinstalação em outro runner Windows sem o ambiente virtual do
 build. O resultado fica no workflow e o instalador, com seu hash, é guardado
-como artefato; nenhuma Release é publicada automaticamente.
+como artefato. Para tags de versão, uma Release Beta é criada como rascunho
+após esses testes; a publicação continua manual.
 
 Antes de publicar uma versão para usuários novos, instale o arquivo
 `dist-installer\AssistenteIA-Setup.exe` em um Windows limpo, sem Python, usando

@@ -2,6 +2,8 @@
   "modelo": "qwen3:8b",
   "modelo_memoria": "qwen3-embedding:0.6b",
   "idioma": "pt-BR",
-  "limite_historico": 100,
+  "microfone": "",
+  "limite_historico": 500,
+  "verificar_atualizacoes": true,
   "configurado": false
 }

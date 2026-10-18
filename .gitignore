@@ -6,6 +6,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
+.coverage
 /build/
 /dist/
 /dist-installer/
@@ -22,6 +24,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+*.pfx
+*.p12
 *.log
 /logs/
 /backups/

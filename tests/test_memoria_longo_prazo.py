@@ -29,6 +29,22 @@ class MemoriaLongoPrazoTests(unittest.TestCase):
         self.conexao.close()
         self.conexao = main.iniciar_banco()
 
+    def test_backyp_antigo_e_arquivado_sem_novas_gravacoes_nele(self):
+        origem = Path(self.pasta.name) / "backyp"
+        origem.mkdir()
+        antigo = origem / "memoria_antes_v2_20260101_120000_123456_UTC.db"
+        with contextlib.closing(sqlite3.connect(antigo)) as copia:
+            copia.execute("CREATE TABLE mensagens (conteudo TEXT)")
+            copia.execute("INSERT INTO mensagens VALUES ('lembrança antiga')")
+            copia.commit()
+        self.reiniciar()
+        destino = Path(self.pasta.name) / "backups" / "legado" / antigo.name
+        self.assertFalse(antigo.exists())
+        self.assertTrue(destino.is_file())
+        with contextlib.closing(sqlite3.connect(destino)) as copia:
+            self.assertEqual(copia.execute("SELECT conteudo FROM mensagens").fetchone()[0], "lembrança antiga")
+        self.assertFalse(list(origem.glob("*.db")))
+
     def mensagem(self, papel, texto, assunto=None, projeto=None):
         a, p = memoria.contexto_ativo(self.conexao)
         with self.conexao:
@@ -88,7 +104,7 @@ class MemoriaLongoPrazoTests(unittest.TestCase):
             segunda = main.iniciar_banco()
             segunda.close()
 
-        copias = list((Path(self.pasta.name) / "backyp").glob("memoria_antes_v2_*.db"))
+        copias = list((Path(self.pasta.name) / "backups" / "legado").glob("memoria_antes_v2_*.db"))
         self.assertEqual(len(copias), 1)
         copia = sqlite3.connect(copias[0])
         try:

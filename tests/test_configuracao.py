@@ -5,10 +5,34 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import numpy as np
+
 from app import aplicativo, configuracao, diagnostico, diagnostico_inicial, internet, primeira_execucao, main, voz, fala, servicos, versao
 
 
 class ConfiguracaoTests(unittest.TestCase):
+    def test_diagnostico_versao_e_recursos(self):
+        self.assertTrue(diagnostico_inicial.versao_compativel("0.40.6"))
+        self.assertFalse(diagnostico_inicial.versao_compativel("0.5.9"))
+        self.assertIsNone(diagnostico_inicial.versao_compativel("desconhecida"))
+        with patch.object(diagnostico_inicial, "_obter_json", side_effect=[
+            {"version": "0.40.6"}, {"models": [{"name": "qwen3:8b"}]},
+        ]), patch.object(diagnostico_inicial, "memoria_ram_gb", return_value=16.0), \
+                patch.object(diagnostico_inicial, "vram_nvidia_gb", return_value=8.0), \
+                patch.object(diagnostico_inicial.sd, "query_devices", return_value=[]):
+            resultado = diagnostico_inicial.verificar()
+        self.assertTrue(resultado["modelo_conversa_disponivel"])
+        self.assertFalse(resultado["modelo_memoria_disponivel"])
+        self.assertTrue(resultado["ollama_versao_compativel"])
+        self.assertEqual(resultado["ram_gb"], 16.0)
+        self.assertEqual(resultado["vram_nvidia_gb"], 8.0)
+
+    @staticmethod
+    def _fechar_raiz(raiz):
+        for identificador in raiz.tk.call("after", "info"):
+            raiz.tk.call("after", "cancel", identificador)
+        raiz.destroy()
+
     def test_versao_exibida_corresponde_ao_instalador(self):
         script = Path(__file__).resolve().parents[1] / "installer" / "AssistenteIA.iss"
         self.assertIn(f"AppVersion={versao.VERSAO}", script.read_text(encoding="utf-8"))
@@ -26,6 +50,9 @@ class ConfiguracaoTests(unittest.TestCase):
                 configuracao.carregar()
             with self.assertRaisesRegex(ValueError, "idioma"):
                 configuracao.validar({"idioma": ["pt-BR"]})
+            self.assertEqual(configuracao.validar({"limite_historico": 2000})["limite_historico"], 2000)
+            with self.assertRaisesRegex(ValueError, "10 a 2000"):
+                configuracao.validar({"limite_historico": 2001})
             configuracao.CONFIGURACAO.write_text("{", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "config_geral.json|geral.json"):
                 configuracao.carregar()
@@ -62,6 +89,83 @@ class ConfiguracaoTests(unittest.TestCase):
             self.assertEqual((main.MODELO, main.MODELO_MEMORIA), ("outro:7b", "vetores:1b"))
             self.assertEqual(main.LIMITE_HISTORICO, 75)
             self.assertEqual((main.IDIOMA, voz.IDIOMA_RECONHECIMENTO), ("en-US", "en"))
+
+    def test_microfone_escolhido_e_salvo_e_aplicado(self):
+        with tempfile.TemporaryDirectory() as pasta, \
+             patch.object(configuracao, "CONFIGURACAO", Path(pasta) / "geral.json"), \
+             patch.object(voz, "MICROFONE_SELECIONADO", ""):
+            dados = configuracao.salvar({"microfone": "USB · WASAPI"})
+            self.assertEqual(configuracao.carregar()["microfone"], "USB · WASAPI")
+            configuracao.aplicar(dados)
+            self.assertEqual(voz.MICROFONE_SELECIONADO, "USB · WASAPI")
+            with self.assertRaisesRegex(ValueError, "microfone"):
+                configuracao.validar({"microfone": "USB\nWASAPI"})
+
+    def test_teste_de_microfone_usa_dispositivo_escolhido(self):
+        with patch.object(voz, "listar_microfones", return_value=[("USB · WASAPI", 2)]), \
+             patch.object(voz.sd, "check_input_settings"), \
+             patch.object(diagnostico_inicial.sd, "InputStream") as stream:
+            stream.return_value.__enter__.return_value.read.return_value = (
+                np.zeros((1024, 1), dtype="float32"), False)
+            self.assertEqual(diagnostico_inicial.testar_microfone("USB · WASAPI"), 0.0)
+            self.assertEqual(stream.call_args.kwargs["device"], 2)
+
+    def test_configuracoes_oferecem_e_guardam_microfone_disponivel(self):
+        try:
+            raiz = tk.Tk()
+        except tk.TclError:
+            self.skipTest("Ambiente sem interface gráfica")
+        raiz.withdraw()
+        with tempfile.TemporaryDirectory() as pasta, \
+             patch.object(configuracao, "CONFIGURACAO", Path(pasta) / "geral.json"), \
+             patch.object(servicos, "CONFIGURACAO", Path(pasta) / "servicos.json"), \
+             patch.object(internet, "CONFIGURACAO", Path(pasta) / "internet.json"), \
+             patch.object(servicos, "obter_chave", return_value=""), \
+             patch.object(voz, "listar_microfones", return_value=[("USB · WASAPI", 2)]), \
+             patch.object(voz.sd, "check_input_settings"), \
+             patch.object(diagnostico_inicial, "verificar"):
+            configuracao.salvar({"configurado": True})
+            assistente = primeira_execucao.AssistenteConfiguracao(raiz, Mock(), primeira=False)
+            try:
+                self.assertIn("USB · WASAPI", assistente.combo_microfone.cget("values"))
+                assistente.microfone.set("USB · WASAPI")
+                assistente.salvar()
+                self.assertEqual(configuracao.carregar()["microfone"], "USB · WASAPI")
+            finally:
+                if assistente.janela.winfo_exists():
+                    assistente.janela.destroy()
+                self._fechar_raiz(raiz)
+
+    def test_filtro_de_microfones_permite_ver_todas_as_entradas(self):
+        try:
+            raiz = tk.Tk()
+        except tk.TclError:
+            self.skipTest("Ambiente sem interface gráfica")
+        raiz.withdraw()
+        opcoes = [("Microfone USB · MME", 1), ("Microfone USB · Windows WASAPI", 2)]
+        with tempfile.TemporaryDirectory() as pasta, \
+             patch.object(configuracao, "CONFIGURACAO", Path(pasta) / "geral.json"), \
+             patch.object(servicos, "CONFIGURACAO", Path(pasta) / "servicos.json"), \
+             patch.object(internet, "CONFIGURACAO", Path(pasta) / "internet.json"), \
+             patch.object(servicos, "obter_chave", return_value=""), \
+             patch.object(voz, "listar_microfones", return_value=opcoes), \
+             patch.object(voz, "listar_microfones_recomendados", return_value=opcoes[1:]), \
+             patch.object(voz, "nome_microfone_padrao", return_value=opcoes[0][0]), \
+             patch.object(diagnostico_inicial, "verificar"):
+            assistente = primeira_execucao.AssistenteConfiguracao(raiz, Mock(), primeira=False)
+            try:
+                self.assertEqual(len(assistente.combo_microfone.cget("values")), 2)
+                self.assertIn("Padrão do Windows: Microfone USB", assistente.estado_microfones.cget("text"))
+                assistente._checkbox_todas.toggle()
+                self.assertTrue(assistente.mostrar_todas_entradas.get())
+                self.assertEqual(len(assistente.combo_microfone.cget("values")), 3)
+                assistente._checkbox_todas.toggle()
+                self.assertFalse(assistente.mostrar_todas_entradas.get())
+                self.assertEqual(len(assistente.combo_microfone.cget("values")), 2)
+            finally:
+                if assistente.janela.winfo_exists():
+                    assistente.janela.destroy()
+                self._fechar_raiz(raiz)
 
     def test_primeira_execucao_nao_inicia_motor_antes_de_configurar(self):
         try:
@@ -116,7 +220,7 @@ class ConfiguracaoTests(unittest.TestCase):
             finally:
                 if assistente.janela.winfo_exists():
                     assistente.janela.destroy()
-                raiz.destroy()
+                self._fechar_raiz(raiz)
 
     def test_configuracoes_validam_antes_de_guardar_chaves(self):
         try:
@@ -163,7 +267,7 @@ class ConfiguracaoTests(unittest.TestCase):
             finally:
                 if assistente.janela.winfo_exists():
                     assistente.janela.destroy()
-                raiz.destroy()
+                self._fechar_raiz(raiz)
 
     def test_preferencias_podem_ser_salvas_com_ollama_temporariamente_fora(self):
         try:
@@ -183,11 +287,13 @@ class ConfiguracaoTests(unittest.TestCase):
             try:
                 assistente.idioma.set("en-US")
                 assistente.pesquisa.set(False)
+                assistente.historico.set("1800")
                 assistente.salvar()
                 self.assertEqual(configuracao.carregar()["idioma"], "en-US")
+                self.assertEqual(configuracao.carregar()["limite_historico"], 1800)
                 self.assertFalse(internet.habilitada())
                 salvar.assert_called_once()
             finally:
                 if assistente.janela.winfo_exists():
                     assistente.janela.destroy()
-                raiz.destroy()
+                self._fechar_raiz(raiz)

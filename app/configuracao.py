@@ -2,15 +2,18 @@
 
 import json
 import re
-from pathlib import Path
+
+from . import caminhos
 
 
-CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_geral.json"
+CONFIGURACAO = caminhos.pasta_dados() / "config_geral.json"
 PADRAO = {
     "modelo": "qwen3:8b",
     "modelo_memoria": "qwen3-embedding:0.6b",
     "idioma": "pt-BR",
-    "limite_historico": 100,
+    "microfone": "",
+    "limite_historico": 500,
+    "verificar_atualizacoes": True,
     "configurado": False,
 }
 IDIOMAS = {"pt-BR", "en-US"}
@@ -29,10 +32,15 @@ def validar(dados):
             raise ValueError(f"Campo '{campo}' inválido: escolha um nome de modelo instalado no Ollama.")
     if not isinstance(resultado["idioma"], str) or resultado["idioma"] not in IDIOMAS:
         raise ValueError("Campo 'idioma' inválido: use pt-BR ou en-US.")
-    if type(resultado["limite_historico"]) is not int or not 10 <= resultado["limite_historico"] <= 500:
-        raise ValueError("Campo 'limite_historico' inválido: use um número de 10 a 500.")
+    microfone = resultado["microfone"]
+    if not isinstance(microfone, str) or len(microfone) > 512 or any(ord(c) < 32 for c in microfone):
+        raise ValueError("Campo 'microfone' inválido: escolha uma entrada nas configurações de voz.")
+    if type(resultado["limite_historico"]) is not int or not 10 <= resultado["limite_historico"] <= 2000:
+        raise ValueError("Campo 'limite_historico' inválido: use um número de 10 a 2000.")
     if type(resultado["configurado"]) is not bool:
         raise ValueError("Campo 'configurado' inválido: use true ou false.")
+    if type(resultado["verificar_atualizacoes"]) is not bool:
+        raise ValueError("Campo 'verificar_atualizacoes' inválido: use true ou false.")
     return {chave: resultado[chave] for chave in PADRAO}
 
 
@@ -64,5 +72,6 @@ def aplicar(dados):
     main.LIMITE_HISTORICO = validos["limite_historico"]
     main.IDIOMA = validos["idioma"]
     voz.IDIOMA_RECONHECIMENTO = "en" if validos["idioma"] == "en-US" else "pt"
+    voz.MICROFONE_SELECIONADO = validos["microfone"]
     fala.VOZ_ONLINE = "en-US-GuyNeural" if validos["idioma"] == "en-US" else "pt-BR-AntonioNeural"
     return validos

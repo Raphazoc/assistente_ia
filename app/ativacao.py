@@ -2,13 +2,12 @@ import json
 import re
 import threading
 import unicodedata
-from pathlib import Path
 
 from .controles import InterromperFala, SolicitarMenu, tecla_durante_fala
-from . import diagnostico
+from . import caminhos, diagnostico
 
 
-CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_voz.json"
+CONFIGURACAO = caminhos.pasta_dados() / "config_voz.json"
 PADRAO = {"palavra_ativacao": "Aurora", "interromper_por_voz": True}
 COMANDOS_DIRETOS = {
     "menu", "sair", "encerrar", "desligar assistente", "texto", "modo texto",
@@ -41,6 +40,7 @@ def definir_palavra(palavra):
         raise ValueError("Escolha um nome diferente dos comandos do programa.")
     dados = carregar_configuracao()
     dados["palavra_ativacao"] = palavra
+    CONFIGURACAO.parent.mkdir(parents=True, exist_ok=True)
     temporario = CONFIGURACAO.with_suffix(".tmp")
     temporario.write_text(json.dumps(dados, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporario.replace(CONFIGURACAO)

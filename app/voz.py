@@ -1,6 +1,7 @@
 
 import math
 import os
+import unicodedata
 import sys
 import threading
 import time
@@ -24,6 +25,8 @@ LIMIAR_INICIO = 0.5
 LIMIAR_CONTINUACAO = 0.35
 MODELO_RECONHECIMENTO = "small"
 IDIOMA_RECONHECIMENTO = "pt"
+MICROFONE_PADRAO = "Padrão do sistema"
+MICROFONE_SELECIONADO = ""
 TERMOS_EM_INGLES = (
     "Python, GitHub, Git, VS Code, Visual Studio Code, Ollama, Whisper, "
     "ChatGPT, OpenAI, Windows, Linux, JavaScript, TypeScript, API, GPU, RTX, "
@@ -33,6 +36,110 @@ _trava_transcricao = threading.Lock()
 _trava_preparacao = threading.Lock()
 _preparacao_iniciada = False
 _cuda_indisponivel = False
+
+
+def listar_microfones():
+    """Lista entradas com nomes estáveis por API de áudio e resolve duplicatas."""
+    dispositivos = sd.query_devices()
+    apis = sd.query_hostapis()
+    contagem = {}
+    encontrados = []
+    for indice, dispositivo in enumerate(dispositivos):
+        if dispositivo.get("max_input_channels", 0) < 1:
+            continue
+        api_indice = dispositivo.get("hostapi", -1)
+        api = apis[api_indice]["name"] if 0 <= api_indice < len(apis) else "Áudio"
+        nome = f'{dispositivo["name"]} · {api}'
+        contagem[nome] = contagem.get(nome, 0) + 1
+        if contagem[nome] > 1:
+            nome += f" ({contagem[nome]})"
+        encontrados.append((nome, indice))
+    return encontrados
+
+
+def _chave_entrada(nome):
+    texto = unicodedata.normalize("NFKD", nome).casefold()
+    return "".join(letra for letra in texto if letra.isalnum() and not unicodedata.combining(letra))
+
+
+def _mesma_entrada(primeiro, segundo):
+    return primeiro == segundo or (min(len(primeiro), len(segundo)) >= 18 and
+                                   (primeiro.startswith(segundo) or segundo.startswith(primeiro)))
+
+
+def _entrada_compativel(indice):
+    try:
+        sd.check_input_settings(device=indice, channels=1, dtype="float32",
+                                samplerate=TAXA_AMOSTRAGEM)
+        return True
+    except (sd.PortAudioError, ValueError, TypeError):
+        return False
+
+
+def listar_microfones_recomendados():
+    """Mostra uma entrada utilizável por microfone, sem repetições de APIs."""
+    entradas = listar_microfones()
+    grupos = []
+    for nome, indice in entradas:
+        fisico, _, api = nome.rpartition(" · ")
+        chave = _chave_entrada(fisico or nome)
+        if any(termo in chave for termo in (
+            "mapeadordesomdamicrosoft", "microsoftsoundmapper",
+            "driverdecapturadesomprimario", "primarysoundcapturedriver",
+            "stereomix", "mixagemestereo", "loopback", "mixedcapture",
+        )):
+            continue
+        if not _entrada_compativel(indice):
+            continue
+        preferencia = (4 if "WASAPI" in api.upper() else
+                       3 if "DIRECTSOUND" in api.upper() else
+                       2 if "MME" in api.upper() else 1)
+        grupo = next((item for item in grupos if _mesma_entrada(item[0], chave)), None)
+        if grupo is None:
+            grupos.append([chave, nome, indice, preferencia])
+        elif preferencia > grupo[3]:
+            grupo[1:] = [nome, indice, preferencia]
+    try:
+        padrao = int(sd.default.device[0])
+    except (TypeError, ValueError, IndexError, RuntimeError):
+        padrao = -1
+    nome_padrao = next((nome.rpartition(" · ")[0] for nome, indice in entradas if indice == padrao), "")
+    chave_padrao = _chave_entrada(nome_padrao)
+    grupos.sort(key=lambda item: (not _mesma_entrada(item[0], chave_padrao), item[0]))
+    return [(nome, indice) for _, nome, indice, _ in grupos]
+
+
+def nome_microfone_padrao():
+    """Identifica o dispositivo usado ao escolher 'Padrão do sistema'."""
+    try:
+        padrao = int(sd.default.device[0])
+    except (TypeError, ValueError, IndexError, RuntimeError):
+        return "não identificado"
+    return next((nome for nome, indice in listar_microfones() if indice == padrao),
+                "não identificado")
+
+
+def microfone_padrao_compativel():
+    try:
+        indice = int(sd.default.device[0])
+    except (TypeError, ValueError, IndexError, RuntimeError):
+        return False
+    return indice >= 0 and _entrada_compativel(indice)
+
+
+def resolver_microfone(selecao=None):
+    """Resolve a preferência atual sem trocar silenciosamente por outra entrada."""
+    escolha = MICROFONE_SELECIONADO if selecao is None else selecao
+    if not escolha:
+        return None
+    for nome, indice in listar_microfones():
+        if nome == escolha:
+            if not _entrada_compativel(indice):
+                raise RuntimeError(
+                    "O microfone escolhido não suporta captura a 16 kHz. "
+                    "Selecione uma entrada recomendada em Configurações → Voz.")
+            return indice
+    raise RuntimeError("O microfone escolhido não está disponível. Selecione outro em Configurações → Voz.")
 
 
 def gpu_transcricao_disponivel():
@@ -226,6 +333,7 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
         channels=1,
         dtype="float32",
         blocksize=AMOSTRAS_POR_BLOCO,
+        device=resolver_microfone(),
     ) as microfone:
         blocos_lidos = 0
         while True:
@@ -255,12 +363,19 @@ def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None, ao
     if not audio.size:
         return ""
 
+    if cancelar is not None and cancelar.is_set():
+        return ""
+
     if ao_capturar is not None:
         ao_capturar()
+    if cancelar is not None and cancelar.is_set():
+        return ""
     diagnostico.registrar("microfone.frase_capturada", duracao_ms=(time.monotonic() - inicio) * 1000)
     print("Processando sua fala...")
     inicio = time.monotonic()
     texto = transcrever_audio(audio)
+    if cancelar is not None and cancelar.is_set():
+        return ""
     diagnostico.registrar("whisper.transcricao_ok", duracao_ms=(time.monotonic() - inicio) * 1000)
     return texto
 

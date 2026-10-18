@@ -1,0 +1,4 @@
+# Ferramentas de verificação. O CI instala o lock completo.
+ruff==0.17.1
+mypy==2.4.0
+coverage==7.16.2

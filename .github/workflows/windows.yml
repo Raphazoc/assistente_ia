@@ -13,19 +13,34 @@ permissions:
 jobs:
   testes:
     runs-on: windows-2025
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.13', '3.14']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.13'
+          python-version: ${{ matrix.python }}
       - name: Instalar dependências
         shell: pwsh
         run: |
           python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-      - name: Executar testes
+          .\.venv\Scripts\python.exe -m pip install -r requirements-ci.txt
+          .\.venv\Scripts\python.exe -m pip check
+      - name: Lint e tipos
         shell: pwsh
-        run: .\.venv\Scripts\python.exe -m unittest discover -s tests -q
+        run: |
+          .\.venv\Scripts\python.exe -m ruff check app tests --select E4,E7,E9,F
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe -m mypy app/caminhos.py app/diagnostico_inicial.py app/conversa.py app/servico_ollama.py app/contexto_memoria.py app/coordenador_acoes.py app/atualizacoes.py --follow-imports=skip --ignore-missing-imports --check-untyped-defs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Testes e cobertura crítica
+        shell: pwsh
+        run: |
+          .\.venv\Scripts\python.exe -m coverage run --source=app -m unittest discover -s tests -q
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          .\.venv\Scripts\python.exe -m coverage report --include='app/acoes.py,app/atualizacoes.py,app/caminhos.py,app/banco.py,app/configuracao.py,app/diagnostico_inicial.py' --fail-under=75
 
   instalador:
     if: github.event_name != 'pull_request'
@@ -40,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           python -m venv .venv
-          .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+          .\.venv\Scripts\python.exe -m pip install -r requirements-ci.txt
       - name: Conferir versão da tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
@@ -49,7 +64,12 @@ jobs:
           if ($env:GITHUB_REF_NAME -ne "v$versao") { throw 'A tag não corresponde à versão do aplicativo.' }
       - name: Gerar instalador e SHA-256
         shell: pwsh
-        run: .\installer\build.ps1
+        env:
+          ASSISTENTE_SIGNING_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+          ASSISTENTE_PFX_BASE64: ${{ secrets.ASSISTENTE_PFX_BASE64 }}
+          ASSISTENTE_PFX_PASSWORD: ${{ secrets.ASSISTENTE_PFX_PASSWORD }}
+          ASSISTENTE_CERT_THUMBPRINT: ${{ secrets.ASSISTENTE_CERT_THUMBPRINT }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File .\installer\build.ps1
       - uses: actions/upload-artifact@v4
         with:
           name: assistente-ia-windows
@@ -72,3 +92,48 @@ jobs:
       - name: Instalar, abrir e desinstalar
         shell: pwsh
         run: .\installer\test_install.ps1 -Instalador .\dist-installer\AssistenteIA-Setup.exe
+
+  preparar_release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: testar_instalacao
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: assistente-ia-windows
+          path: dist-installer
+      - name: Conferir origem da tag e integridade do instalador
+        shell: pwsh
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'A tag precisa apontar para um commit de main.' }
+          $instalador = '.\dist-installer\AssistenteIA-Setup.exe'
+          $manifesto = '.\dist-installer\AssistenteIA-Setup.exe.sha256'
+          $linha = (Get-Content -LiteralPath $manifesto -Raw).Trim()
+          if ($linha -notmatch '^([0-9a-fA-F]{64})  AssistenteIA-Setup\.exe$') { throw 'Manifesto SHA-256 inválido.' }
+          if ((Get-FileHash -LiteralPath $instalador -Algorithm SHA256).Hash -ine $Matches[1]) { throw 'O hash do instalador não confere.' }
+      - name: Exigir assinatura Authenticode válida
+        shell: pwsh
+        env:
+          ASSISTENTE_CERT_THUMBPRINT: ${{ secrets.ASSISTENTE_CERT_THUMBPRINT }}
+        run: |
+          if (-not $env:ASSISTENTE_CERT_THUMBPRINT) { throw 'Configure o thumbprint do certificado antes de publicar.' }
+          $assinatura = Get-AuthenticodeSignature -LiteralPath '.\dist-installer\AssistenteIA-Setup.exe'
+          if ($assinatura.Status -ne 'Valid' -or -not $assinatura.TimeStamperCertificate) { throw 'Assinatura Authenticode ou carimbo de tempo inválido.' }
+          if ($assinatura.SignerCertificate.Thumbprint -ine ($env:ASSISTENTE_CERT_THUMBPRINT -replace '\s', '')) { throw 'Certificado inesperado.' }
+      - name: Criar rascunho de release Beta para revisão
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME `
+            .\dist-installer\AssistenteIA-Setup.exe `
+            .\dist-installer\AssistenteIA-Setup.exe.sha256 `
+            --repo $env:GITHUB_REPOSITORY --verify-tag --draft --prerelease `
+            --title "Assistente IA $env:GITHUB_REF_NAME (Beta)" --generate-notes

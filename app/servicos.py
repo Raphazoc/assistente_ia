@@ -1,10 +1,9 @@
 """Preferências de provedores; chaves ficam no cofre do sistema operacional."""
 
 import json
-from pathlib import Path
+from . import caminhos
 
-
-CONFIGURACAO = Path(__file__).resolve().parent.parent / "resources" / "config_servicos.json"
+CONFIGURACAO = caminhos.pasta_dados() / "config_servicos.json"
 SERVICO_CREDENCIAIS = "AssistenteIA"
 PADRAO = {"buscador": "duckduckgo", "voz": "edge", "voice_id": ""}
 BUSCADORES = {"duckduckgo", "brave"}

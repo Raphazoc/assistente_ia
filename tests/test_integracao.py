@@ -10,7 +10,7 @@ import tkinter as tk
 import unittest
 from pathlib import Path
 from urllib.error import HTTPError
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 from ollama import ResponseError
 
@@ -197,7 +197,13 @@ class IntegracaoTests(unittest.TestCase):
         ):
             janela = aplicativo.JanelaAssistente(raiz, iniciar_motor=True)
             try:
-                raiz.after(220, raiz.quit)
+                def aguardar_diagnostico():
+                    if janela.assistente is not None and janela.assistente.resultado is not None:
+                        raiz.quit()
+                    else:
+                        raiz.after(40, aguardar_diagnostico)
+                raiz.after(40, aguardar_diagnostico)
+                raiz.after(3000, raiz.quit)
                 raiz.mainloop()
                 self.assertFalse(janela.motor_iniciado)
                 iniciar.assert_not_called()

@@ -44,6 +44,26 @@ class PlanoAcao:
     tipo: str
     alvo: str
     destino: str = ""
+    selo: tuple = ()
+
+
+def _identidade(caminho):
+    estado = caminho.stat(follow_symlinks=False)
+    return estado.st_dev, estado.st_ino, estado.st_size, estado.st_mtime_ns
+
+
+def _identidade_arquivo(arquivo):
+    estado = os.fstat(arquivo.fileno())
+    return estado.st_dev, estado.st_ino, estado.st_size, estado.st_mtime_ns
+
+
+def _recusar_reparse(caminho, base):
+    """Recusa links e junctions em qualquer componente do caminho solicitado."""
+    atual = caminho
+    while atual != base and atual.is_relative_to(base):
+        if atual.is_symlink() or (hasattr(atual, "is_junction") and atual.is_junction()):
+            raise ValueError("Links simbólicos e junctions não são permitidos em ações locais.")
+        atual = atual.parent
 
 
 def _normalizar(texto):
@@ -67,10 +87,13 @@ def _caminho(alvo, raiz, existe=True):
     """Resolve um caminho e impede acesso fora do projeto ou a pastas protegidas."""
     if not alvo or "\x00" in alvo:
         raise ValueError("Informe um caminho dentro da pasta do projeto.")
+    if str(alvo).startswith(("\\\\", "//")):
+        raise ValueError("Caminhos UNC de rede não são permitidos em ações locais.")
     base = Path(raiz).resolve()
     caminho = Path(alvo)
     if not caminho.is_absolute():
         caminho = base / caminho
+    _recusar_reparse(caminho, base)
     caminho = caminho.resolve(strict=False)
     if not caminho.is_relative_to(base):
         raise ValueError("A ação só pode acessar arquivos da pasta do projeto.")
@@ -110,8 +133,10 @@ def validar(plano, raiz):
             raise ValueError("Selecione um arquivo comum do projeto; arquivos essenciais não podem ser movidos.")
         if destino.exists() or not destino.parent.is_dir() or destino.name.casefold() in ARQUIVOS_PROTEGIDOS:
             raise ValueError("O destino já existe, é protegido ou sua pasta não existe.")
-        return PlanoAcao(plano.tipo, str(alvo), str(destino))
-    return PlanoAcao(plano.tipo, str(alvo))
+        return PlanoAcao(plano.tipo, str(alvo), str(destino),
+                         (_identidade(alvo), _identidade(destino.parent)))
+    observado = alvo.parent if plano.tipo == "criar_pasta" else alvo
+    return PlanoAcao(plano.tipo, str(alvo), selo=(_identidade(observado),))
 
 
 def planejar(pedido, raiz, gerar_json):
@@ -152,7 +177,12 @@ def descricao(plano):
 
 def executar(plano, raiz, gerar_json, mostrar=None):
     """Executa uma ação previamente validada e retorna um resumo do resultado."""
+    confirmado = plano
     plano = validar(plano, raiz)
+    if confirmado.selo and (confirmado.selo != plano.selo or
+                            os.path.normcase(confirmado.alvo) != os.path.normcase(plano.alvo) or
+                            os.path.normcase(confirmado.destino) != os.path.normcase(plano.destino)):
+        raise ValueError("O arquivo ou caminho mudou após a confirmação. Confirme a ação novamente.")
     if plano.tipo == "abrir_programa":
         executavel = Path(os.environ.get("SystemRoot", "C:\\Windows")) / "System32" / PROGRAMAS[plano.alvo]
         if not executavel.is_file():
@@ -176,7 +206,15 @@ def executar(plano, raiz, gerar_json, mostrar=None):
         (mostrar or print)("\n===== ARQUIVOS EM " + plano.alvo + " =====\n" + ("\n".join(nomes) if nomes else "Pasta vazia."))
         return f"Listei {len(nomes)} itens de {plano.alvo} no terminal."
     if plano.tipo == "ler_arquivo":
-        texto = Path(plano.alvo).read_text(encoding="utf-8-sig", errors="replace")
+        with Path(plano.alvo).open("rb") as arquivo:
+            if plano.selo[0] != _identidade_arquivo(arquivo):
+                raise ValueError("O arquivo mudou antes da leitura. Confirme novamente.")
+            bruto = arquivo.read(MAX_LEITURA + 1)
+            if plano.selo[0] != _identidade_arquivo(arquivo):
+                raise ValueError("O arquivo mudou durante a leitura. Confirme novamente.")
+        if len(bruto) > MAX_LEITURA:
+            raise ValueError("Arquivo grande demais para leitura pela assistente.")
+        texto = bruto.decode("utf-8-sig", errors="replace")
         (mostrar or print)(f"\n===== CONTEÚDO DE {plano.alvo} =====\n{texto}\n===== FIM DO ARQUIVO =====")
         return f"Conteúdo de {plano.alvo} exibido no terminal."
     if plano.tipo == "criar_pasta":
