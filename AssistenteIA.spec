@@ -18,7 +18,7 @@ dados = [
 ]
 binarios = []
 ocultos = []
-for pacote in ("faster_whisper", "piper", "onnxruntime", "ctranslate2", "sounddevice", "av", "edge_tts", "keyring", "pygments", "customtkinter"):
+for pacote in ("faster_whisper", "piper", "onnxruntime", "ctranslate2", "sounddevice", "av", "edge_tts", "keyring", "pygments", "customtkinter", "kaldi_native_fbank"):
     dados_pacote, binarios_pacote, ocultos_pacote = collect_all(pacote)
     dados.extend(dados_pacote)
     binarios.extend(binarios_pacote)

@@ -4,7 +4,7 @@ import json
 import sqlite3
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -39,6 +39,17 @@ class MemoriaPersistenteTests(unittest.TestCase):
         self.assertIn("madrugada", madrugada)
         self.assertNotEqual(manha, madrugada)
         self.assertIn("Preferências explícitas", madrugada)
+
+    def test_data_atual_vem_do_relogio_local_e_nao_da_memoria(self):
+        agora = datetime(2026, 10, 19, 13, 27, tzinfo=timezone(timedelta(hours=-3)))
+        self.assertIn("19 de outubro de 2026", main.contexto_temporal(agora))
+        self.assertEqual(main.resposta_data_atual("Que dia é hoje?", agora),
+                         "Hoje é 19 de outubro de 2026.")
+        self.assertIsNone(main.resposta_data_atual("Como formatar uma data em Python?", agora))
+        with patch.object(main, "chat") as modelo:
+            self.assertEqual(main.obter_resposta(self.conexao, [], "Que dia é hoje?"),
+                             main.resposta_data_atual("Que dia é hoje?"))
+        modelo.assert_not_called()
 
     def test_preferencia_de_estilo_vale_em_outro_assunto_e_pode_ser_excluida(self):
         identificador = main.memoria.guardar(self.conexao, "Prefiro respostas sem piadas.")

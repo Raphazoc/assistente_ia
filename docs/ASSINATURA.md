@@ -22,8 +22,10 @@ arquivo do projeto:
 
 O workflow de tag exige esses secrets, assina `AssistenteIA.exe` antes do Inno
 Setup e assina `AssistenteIA-Setup.exe` depois. Ambos passam por verificação
-Authenticode com carimbo de tempo; o instalador é validado novamente antes do
-rascunho de release. O manifesto SHA-256 é calculado **após** a assinatura.
+Authenticode com carimbo de tempo; o teste de instalação confirma novamente a
+assinatura do executável instalado e do instalador, e a etapa de release
+revalida o instalador antes do rascunho. O manifesto SHA-256 é calculado
+**após** a assinatura.
 Sem certificado válido ou sem acesso ao serviço de timestamp, a release falha.
 
 Após baixar um artefato, confirme localmente:

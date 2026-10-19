@@ -19,9 +19,10 @@ from . import servicos
 PASTA_PROJETO = Path(__file__).resolve().parent.parent
 MODELO_VOZ = PASTA_PROJETO / "resources" / "vozes" / "pt_BR-faber-medium.onnx"
 
-# A voz principal envia o texto a ser falado ao serviço online da Microsoft.
-# Para uma voz feminina, use "pt-BR-FranciscaNeural".
-VOZ_ONLINE = "pt-BR-AntonioNeural"
+# A voz multilíngue alterna a pronúncia entre português e termos em inglês.
+# O texto continua sendo enviado apenas ao provedor de voz já escolhido.
+VOZ_MULTILINGUE = "en-US-BrianMultilingualNeural"
+VOZ_ONLINE = VOZ_MULTILINGUE
 VELOCIDADE_ONLINE = "+3%"
 TOM_ONLINE = "+0Hz"
 USAR_VOZ_ONLINE = True

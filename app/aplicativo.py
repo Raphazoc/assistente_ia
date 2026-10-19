@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 import tkinter as tk
 import webbrowser
 from datetime import datetime
@@ -32,6 +33,7 @@ from . import icone_app
 from . import main
 from . import memoria
 from . import memoria_ui
+from . import perfil_voz
 from . import resumos
 from . import renderizacao
 from . import servicos
@@ -151,6 +153,7 @@ class MotorDesktop:
         self.eventos = eventos
         self.pedidos = queue.Queue()
         self.cancelar_captura = threading.Event()
+        self.concluir_captura = threading.Event()
         self.parar_fala = threading.Event()
         self.microfone_ativo = threading.Event()
         self.encerrando = threading.Event()
@@ -235,12 +238,18 @@ class MotorDesktop:
         self.parar_fala.set()
         self.pedidos.put(("acordar", ""))
 
-    def desativar_microfone(self):
-        """Cancela a captura e a escuta de interrupções por voz."""
+    def desativar_microfone(self, concluir_frase=False):
+        """Desliga a escuta; o botão Mudo conserva a frase já iniciada."""
         self.microfone_ativo.clear()
-        self.cancelar_captura.set()
+        if concluir_frase:
+            self.concluir_captura.set()
+        else:
+            self.cancelar_captura.set()
         if self.monitor_ativo is not None:
-            self.monitor_ativo.finalizar.set()
+            if concluir_frase:
+                self.monitor_ativo.concluir_fala.set()
+            else:
+                self.monitor_ativo.finalizar.set()
 
     def interromper_fala(self):
         self.parar_fala.set()
@@ -267,11 +276,11 @@ class MotorDesktop:
         if not self.encerrando.is_set():
             self.eventos.put((tipo, *dados))
 
-    def _confirmar(self, titulo, descricao):
+    def _confirmar(self, titulo, descricao, evento="confirmar"):
         resposta = {"evento": threading.Event(), "aceita": False}
         with self.confirmacao_trava:
             self.confirmacao = resposta
-        self._emitir("confirmar", titulo, descricao)
+        self._emitir(evento, titulo, descricao)
         resposta["evento"].wait()
         with self.confirmacao_trava:
             self.confirmacao = None
@@ -281,7 +290,8 @@ class MotorDesktop:
     def _autorizar_pesquisa(self, plano):
         consultas = "\n".join("• " + consulta for consulta in plano.consultas)
         provedor = "Brave Search (DuckDuckGo se falhar)" if servicos.carregar()["buscador"] == "brave" else "DuckDuckGo"
-        return self._confirmar("Autorizar pesquisa na internet?", plano.motivo + "\nBuscador: " + provedor + "\n" + consultas)
+        return self._confirmar("Autorizar pesquisa na internet?", plano.motivo + "\nBuscador: " + provedor + "\n" + consultas,
+                               evento="confirmar_pesquisa")
 
     def _autorizar_acao(self, plano):
         return self._confirmar("Executar ação no computador?", acoes.descricao(plano))
@@ -293,7 +303,8 @@ class MotorDesktop:
         with ativacao.MonitorInterrupcao(resposta, habilitado=self.microfone_ativo.is_set()) as monitor:
             self.monitor_ativo = monitor
             try:
-                fala.falar(resposta, controle=_ControleFala(monitor, self.parar_fala))
+                controle = _ControleFala(monitor, self.parar_fala)
+                fala.falar(resposta, controle=controle)
             finally:
                 self.monitor_ativo = None
         self._emitir("estado_audio", "Voltando a ouvir…" if self.microfone_ativo.is_set() else "Microfone desligado")
@@ -347,7 +358,9 @@ class MotorDesktop:
                 lambda con, h, texto, voz, pesquisa: main.obter_resposta(
                     con, h, texto, modo_voz=voz, pesquisa=pesquisa),
             )
-            resposta = servico.responder(conexao, historico, pergunta, modo_voz=(origem == "audio"))
+            resposta = main.resposta_data_atual(pergunta)
+            if resposta is None:
+                resposta = servico.responder(conexao, historico, pergunta, modo_voz=(origem == "audio"))
         except Exception as erro:
             diagnostico.registrar("conversa.resposta_falhou", erro=erro)
             self._emitir("mensagem", origem, "Erro", erros.orientar(erro))
@@ -413,6 +426,8 @@ class MotorDesktop:
                         continue
                     cancelar_atual = threading.Event()
                     self.cancelar_captura = cancelar_atual
+                    concluir_atual = threading.Event()
+                    self.concluir_captura = concluir_atual
                     if not self.microfone_ativo.is_set():
                         cancelar_atual.set()
                         continue
@@ -421,6 +436,7 @@ class MotorDesktop:
                         from .voz import ouvir
                         texto = ouvir(
                             cancelar=cancelar_atual, teclado=False, aguardar_fala=True,
+                            finalizar_fala=concluir_atual,
                             ao_capturar=lambda: self._emitir("estado_audio", "Transcrevendo sua fala…"),
                             ao_nivel=lambda nivel: self._emitir("nivel_audio", nivel),
                         )
@@ -459,6 +475,9 @@ class JanelaAssistente:
         self.motor = MotorDesktop(self.eventos)
         self.microfone_ligado = False
         self.microfone_mutado = False
+        self.cadastro_voz_ativo = False
+        self.cadastro_voz_cancelar = threading.Event()
+        self.microfone_antes_cadastro = False
         self.modo = "texto"
         self.nivel_audio = 0.0
         self.fase_onda = 0.0
@@ -617,19 +636,11 @@ class JanelaAssistente:
         self.raiz.grid_columnconfigure(1, weight=1, uniform="paineis")
         self.raiz.grid_rowconfigure(3, weight=1)
 
-        topo = tk.Frame(self.raiz, bg=COR_FUNDO)
-        topo.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(24, 20))
-        titulo = tk.Frame(topo, bg=COR_FUNDO)
-        titulo.pack(side="left")
-        marca = tk.Frame(titulo, bg=COR_FUNDO)
-        marca.pack(anchor="w")
-        self.marca_icone = icone_app.imagem_cabecalho(54)
-        ctk.CTkLabel(marca, text="", image=self.marca_icone, width=54, height=54).pack(
-            side="left", padx=(0, 10))
-        self._rotulo(marca, "Assistente IA", 22).pack(side="left")
-        self._rotulo(titulo, "Converse do seu jeito", 10, COR_SUAVE).pack(anchor="w", padx=64)
-        acoes_topo = tk.Frame(topo, bg=COR_FUNDO)
-        acoes_topo.pack(side="right")
+        self.topo = tk.Frame(self.raiz, bg=COR_FUNDO)
+        self.topo.grid(row=0, column=0, columnspan=2, sticky="ew", padx=28, pady=(14, 12))
+        self.topo.grid_columnconfigure(0, weight=1, uniform="laterais")
+        self.topo.grid_columnconfigure(2, weight=1, uniform="laterais")
+        self.acoes_topo = acoes_topo = tk.Frame(self.topo, bg=COR_FUNDO)
         self.gerenciar = self._botao(acoes_topo, "Memória", self.abrir_memorias, icone="memory")
         self.gerenciar.configure(font=("Segoe UI", 12, "bold"), height=46)
         self.gerenciar.pack(side="right")
@@ -640,14 +651,13 @@ class JanelaAssistente:
         self.pesquisa.configure(font=("Segoe UI", 12, "bold"), height=46)
         self.pesquisa.pack(side="right", padx=(0, 8))
 
-        self.abas = tk.Frame(self.raiz, bg=COR_FUNDO)
-        self.abas.grid(row=1, column=0, columnspan=2, sticky="ew", padx=28, pady=(0, 12))
+        self.abas = tk.Frame(self.topo, bg=COR_FUNDO)
         self.grupo_abas = tk.Frame(self.abas, bg=COR_FUNDO)
         self.grupo_abas.pack(anchor="center")
         self.aba_texto = self._botao(self.grupo_abas, "Texto", lambda: self.selecionar_modo("texto"), icone="text")
         self.aba_voz = self._botao(self.grupo_abas, "Voz", lambda: self.selecionar_modo("voz"), icone="voice")
-        self.aba_texto.configure(font=("Segoe UI", 13, "bold"), height=52, width=215)
-        self.aba_voz.configure(font=("Segoe UI", 13, "bold"), height=52, width=215)
+        self.aba_texto.configure(font=("Segoe UI", 13, "bold"), height=44, width=180)
+        self.aba_voz.configure(font=("Segoe UI", 13, "bold"), height=44, width=180)
         self.aba_texto.configure(bg="#1d3b57")
         self.aba_texto.configure(fg=COR_TEXTO)
         self.aba_texto.grid(row=0, column=0, sticky="ew", padx=(0, 6), pady=(0, 4))
@@ -742,43 +752,58 @@ class JanelaAssistente:
         painel_audio.grid_columnconfigure(0, weight=1)
         painel_audio.grid_rowconfigure(0, weight=1)
         conteudo_audio = tk.Frame(painel_audio, bg=COR_CARTAO)
-        conteudo_audio.grid(row=0, column=0, sticky="nsew", padx=22, pady=18)
+        conteudo_audio.grid(row=0, column=0, sticky="nsew", padx=18, pady=14)
         conteudo_audio.grid_columnconfigure(0, weight=1)
-        conteudo_audio.grid_rowconfigure(6, weight=1, minsize=125)
-        simbolo = ctk.CTkFrame(conteudo_audio, width=78, height=78, corner_radius=39,
+        conteudo_audio.grid_rowconfigure(4, weight=1, minsize=240)
+        cabecalho_audio = tk.Frame(conteudo_audio, bg=COR_CARTAO)
+        cabecalho_audio.grid(row=0, column=0, sticky="ew")
+        cabecalho_audio.grid_columnconfigure(1, weight=1)
+        simbolo = ctk.CTkFrame(cabecalho_audio, width=48, height=48, corner_radius=24,
                                fg_color="#1c2b56", border_color=COR_AUDIO, border_width=2)
         simbolo.grid_propagate(False)
-        ctk.CTkLabel(simbolo, text="", image=icones.obter("voice", COR_AUDIO, 34),
-                     width=44, height=44).place(relx=0.5, rely=0.5, anchor="center")
-        simbolo.grid(row=0, column=0, pady=(2, 4))
-        self.estado_audio = self._rotulo(conteudo_audio, "Microfone desligado", 19, COR_SUAVE)
-        self.estado_audio.configure(anchor="center", font=("Segoe UI", 19, "bold"))
-        self.estado_audio.grid(row=1, column=0, sticky="ew")
-        self.descricao_audio = self._rotulo(conteudo_audio, "Fale naturalmente e faça uma pausa ao terminar.", 10, COR_SUAVE)
-        self.descricao_audio.configure(anchor="center")
+        ctk.CTkLabel(simbolo, text="", image=icones.obter("voice", COR_AUDIO, 26),
+                     width=30, height=30).place(relx=0.5, rely=0.5, anchor="center")
+        simbolo.grid(row=0, column=0, rowspan=2, padx=(0, 12))
+        self.estado_audio = self._rotulo(cabecalho_audio, "Microfone desligado", 18, COR_SUAVE,
+                                        wraplength=340, justify="left")
+        self.estado_audio.configure(font=("Segoe UI", 18, "bold"))
+        self.estado_audio.grid(row=0, column=1, sticky="w")
+        self.descricao_audio = self._rotulo(cabecalho_audio, "Fale naturalmente e faça uma pausa ao terminar.",
+                                           10, COR_SUAVE, wraplength=340, justify="left")
         self.descricao_audio.grid(
-            row=2, column=0, sticky="ew", pady=(5, 6)
+            row=1, column=1, sticky="w", pady=(3, 0)
         )
-        self.onda = tk.Canvas(conteudo_audio, bg=COR_CARTAO, highlightthickness=0, height=62)
-        self.onda.grid(row=3, column=0, sticky="nsew", pady=(2, 4))
-        controles_audio = tk.Frame(conteudo_audio, bg=COR_CARTAO)
-        controles_audio.grid(row=4, column=0, pady=(0, 9))
+        self.onda = tk.Canvas(conteudo_audio, bg=COR_CARTAO, highlightthickness=0, height=36)
+        self.onda.grid(row=1, column=0, sticky="ew", pady=(5, 3))
+        controles_audio = tk.Frame(cabecalho_audio, bg=COR_CARTAO)
+        controles_audio.grid(row=0, column=2, rowspan=2, padx=(12, 0))
         self.falar = self._botao(controles_audio, "Ativar microfone", self.alternar_microfone,
                                 cor=COR_AUDIO, icone="voice")
-        self.falar.configure(width=210, height=42)
-        self.falar.pack(side="left", padx=(0, 12))
+        self.falar.configure(width=164, height=42)
+        self.falar.pack(side="left", padx=(0, 8))
         self.parar = self._botao(controles_audio, "Parar resposta", self.motor.interromper_fala,
                                 icone="stop", icone_cor=COR_ERRO)
         self.parar.configure(fg=COR_ERRO)
-        self.parar.configure(width=210, height=42, border_width=1, border_color=COR_ERRO)
+        self.parar.configure(width=164, height=42, border_width=1, border_color=COR_ERRO)
         self.parar.pack(side="left")
+        perfil = tk.Frame(conteudo_audio, bg=COR_CARTAO)
+        perfil.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        perfil.grid_columnconfigure(2, weight=1)
+        self.botao_perfil = self._botao(perfil, "Registrar minha voz", self.registrar_voz,
+                                        icone="voice")
+        self.botao_perfil.grid(row=0, column=0, padx=(0, 8))
+        self._botao(perfil, "Apagar perfil de voz", self.apagar_perfil_voz).grid(row=0, column=1)
+        self.perfil_estado = self._rotulo(perfil,
+            "Perfil local ativo" if perfil_voz.cadastrado() else "Perfil de voz não cadastrado", 9, COR_SUAVE,
+            wraplength=360, justify="right")
+        self.perfil_estado.grid(row=0, column=2, sticky="e", padx=(12, 0))
         cabecalho_transcricao = tk.Frame(conteudo_audio, bg=COR_CARTAO)
-        cabecalho_transcricao.grid(row=5, column=0, sticky="ew", pady=(0, 8))
+        cabecalho_transcricao.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         self._rotulo(cabecalho_transcricao, "CONVERSA POR VOZ", 10, COR_AUDIO).pack(side="left")
         self._rotulo(cabecalho_transcricao, "Transcrição em tempo real", 9, COR_SUAVE).pack(side="right")
-        conversa_audio = ctk.CTkFrame(conteudo_audio, fg_color="#101e34", corner_radius=15,
+        self.conversa_audio = conversa_audio = ctk.CTkFrame(conteudo_audio, fg_color="#101e34", corner_radius=15,
                                       border_color=COR_BORDA, border_width=1)
-        conversa_audio.grid(row=6, column=0, sticky="nsew")
+        conversa_audio.grid(row=4, column=0, sticky="nsew")
         conversa_audio.grid_columnconfigure(0, weight=1)
         conversa_audio.grid_rowconfigure(0, weight=1)
         self.cartoes_audio = ctk.CTkScrollableFrame(
@@ -800,17 +825,33 @@ class JanelaAssistente:
         self.area_audio.grid_remove()
 
         rodape = tk.Frame(self.raiz, bg=COR_FUNDO)
-        rodape.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(0, 16))
+        rodape.grid(row=4, column=0, columnspan=2, sticky="ew", padx=28, pady=(0, 10))
+        rodape.grid_columnconfigure(1, weight=1)
         self.estado = self._rotulo(rodape, "Iniciando…", 10, COR_SUAVE)
-        self.estado.pack(side="left")
-        self.botao_atualizacao = self._botao(rodape, "Verificar versão", self.verificar_atualizacao,
+        self.estado.configure(wraplength=200, justify="left")
+        self.estado.grid(row=0, column=0, sticky="w")
+        self.marca_rodape = tk.Frame(rodape, bg=COR_FUNDO)
+        self.marca_rodape.grid(row=0, column=1, padx=12)
+        self.marca_icone = icone_app.imagem_cabecalho(40)
+        ctk.CTkLabel(self.marca_rodape, text="", image=self.marca_icone, width=40, height=40).pack(
+            side="left", padx=(0, 8))
+        marca_texto = tk.Frame(self.marca_rodape, bg=COR_FUNDO)
+        marca_texto.pack(side="left")
+        self._rotulo(marca_texto, "Assistente IA", 17).pack(anchor="w")
+        self._rotulo(marca_texto, "Converse do seu jeito", 9, COR_SUAVE).pack(anchor="w")
+        acoes_rodape = tk.Frame(rodape, bg=COR_FUNDO)
+        acoes_rodape.grid(row=0, column=2, sticky="e")
+        self.botao_atualizacao = self._botao(acoes_rodape, "Verificar versão", self.verificar_atualizacao,
                                            icone="refresh")
         self.botao_atualizacao.configure(font=("Segoe UI", 9), padx=10, pady=5)
         self.botao_atualizacao.pack(side="right")
         self.falar.configure(state="disabled")
+        self.botao_perfil.configure(state="disabled")
         self.enviar.configure(state="disabled")
         self.pesquisa.configure(state="disabled")
         self.gerenciar.configure(state="disabled")
+        self._cabecalho_compacto = None
+        self._dispor_cabecalho(1180)
         self._agendar(80, self._animar_onda)
 
     def _enter(self, evento):
@@ -831,12 +872,31 @@ class JanelaAssistente:
     def _ajustar_layout(self, evento):
         if evento.widget is not self.raiz:
             return
-        self.descricao_audio.configure(wraplength=max(300, evento.width - 90))
+        self._dispor_cabecalho(evento.width)
+        self.descricao_audio.configure(wraplength=max(210, min(500, evento.width - 530)))
+        self.estado_audio.configure(wraplength=max(210, min(500, evento.width - 530)))
+        self.perfil_estado.configure(wraplength=max(200, evento.width - 460))
         self.detalhes_confirmacao.configure(wraplength=max(250, evento.width - 340))
+
+    def _dispor_cabecalho(self, largura):
+        """Abas no topo; ações ganham uma segunda linha em janelas estreitas."""
+        limite = max(1320, 2 * self.acoes_topo.winfo_reqwidth() + self.grupo_abas.winfo_reqwidth() + 56)
+        compacto = largura < limite
+        if compacto == self._cabecalho_compacto:
+            return
+        self._cabecalho_compacto = compacto
+        if compacto:
+            self.abas.grid(row=0, column=0, columnspan=3, sticky="ew")
+            self.acoes_topo.grid(row=1, column=0, columnspan=3, sticky="e", pady=(8, 0))
+        else:
+            self.abas.grid(row=0, column=1, columnspan=1, sticky="ew")
+            self.acoes_topo.grid(row=0, column=2, columnspan=1, sticky="e", pady=0)
 
     def selecionar_modo(self, modo):
         if modo not in {"texto", "voz"} or modo == self.modo:
             return
+        if modo == "texto" and self.cadastro_voz_ativo:
+            self.cadastro_voz_cancelar.set()
         self.modo = modo
         if modo == "voz":
             self.area_escrita.grid_remove()
@@ -903,16 +963,82 @@ class JanelaAssistente:
                                      fg=COR_AUDIO if ativo else COR_SUAVE)
 
     def alternar_microfone(self):
-        if not self.pronto:
+        if not self.pronto or self.cadastro_voz_ativo:
             return
         if self.microfone_ligado:
             self.microfone_mutado = True
-            self.motor.desativar_microfone()
+            self.motor.desativar_microfone(concluir_frase=True)
             self._mostrar_microfone(False)
         else:
             self.microfone_mutado = False
             self.motor.ativar_microfone()
             self._mostrar_microfone(True)
+
+    def registrar_voz(self):
+        """Duas frases locais criam um perfil; o áudio bruto é descartado."""
+        if not self.pronto or self.cadastro_voz_ativo:
+            return
+        if not messagebox.askyesno(
+                "Registrar minha voz",
+                "O aplicativo baixará um modelo público de 26 MB e gravará duas frases "
+                "pelo microfone. O áudio será processado somente neste computador e "
+                "descartado; apenas um perfil numérico ficará salvo. Continuar?",
+                parent=self.raiz, default=messagebox.NO):
+            return
+        self.cadastro_voz_ativo = True
+        self.cadastro_voz_cancelar = threading.Event()
+        self.microfone_antes_cadastro = self.microfone_ligado
+        self.motor.interromper_fala()
+        if self.microfone_ligado:
+            self.motor.desativar_microfone()
+            self._mostrar_microfone(False)
+        self.falar.configure(state="disabled")
+        self.botao_perfil.configure(state="disabled")
+        self.perfil_estado.configure(text="Preparando o modelo local de voz…", fg=COR_AUDIO)
+
+        def capturar_frase(numero):
+            self._emitir_cadastro(f"Frase {numero}/2: diga uma frase longa e faça uma pausa.")
+            temporizador = threading.Timer(20, self.cadastro_voz_cancelar.set)
+            temporizador.start()
+            try:
+                audio = voz.capturar_audio(cancelar=self.cadastro_voz_cancelar, teclado=False,
+                                          anunciar=False, aguardar_fala=True, limite_fala=6)
+            finally:
+                temporizador.cancel()
+            if self.cadastro_voz_cancelar.is_set():
+                raise ValueError("Cadastro cancelado ou sem fala no tempo esperado.")
+            if audio is None or audio.size < 1.2 * voz.TAXA_AMOSTRAGEM:
+                raise ValueError("Fale por pelo menos 1,2 segundo em cada gravação.")
+            return audio
+
+        def trabalho():
+            try:
+                perfil_voz.preparar_modelo()
+                time.sleep(0.2)  # O motor libera o dispositivo antes da captura.
+                primeira = capturar_frase(1)
+                segunda = capturar_frase(2)
+                if self.cadastro_voz_cancelar.is_set():
+                    raise ValueError("Cadastro cancelado.")
+                perfil_voz.cadastrar(primeira, segunda)
+                if not self._fechada:
+                    self.eventos.put(("perfil_voz_concluido", "Perfil de voz local cadastrado.", True))
+            except Exception as erro:
+                if not self._fechada:
+                    self.eventos.put(("perfil_voz_concluido", f"Não foi possível registrar a voz: {erro}", False))
+
+        threading.Thread(target=trabalho, name="cadastro-voz", daemon=True).start()
+
+    def _emitir_cadastro(self, mensagem):
+        if not self._fechada:
+            self.eventos.put(("perfil_voz_status", mensagem))
+
+    def apagar_perfil_voz(self):
+        if self.cadastro_voz_ativo or not perfil_voz.cadastrado():
+            return
+        if messagebox.askyesno("Apagar perfil de voz", "Remover o perfil local de voz?",
+                               parent=self.raiz, default=messagebox.NO):
+            perfil_voz.remover()
+            self.perfil_estado.configure(text="Perfil de voz não cadastrado", fg=COR_SUAVE)
 
     def abrir_configuracoes(self):
         """Abre todas as preferências em uma única janela."""
@@ -1132,6 +1258,7 @@ class JanelaAssistente:
                     self._mostrar_microfone(False)
                     self._mostrar_pesquisa()
                     self.falar.configure(state="normal")
+                    self.botao_perfil.configure(state="normal")
                     self.enviar.configure(state="normal")
                     self.pesquisa.configure(state="normal")
                     self.configurar.configure(state="normal")
@@ -1190,12 +1317,33 @@ class JanelaAssistente:
                 elif tipo == "nivel_audio":
                     if self.microfone_ligado:
                         self.nivel_audio = max(self.nivel_audio, dados[0])
+                elif tipo == "perfil_voz_status":
+                    self.perfil_estado.configure(text=dados[0], fg=COR_AUDIO)
+                elif tipo == "perfil_voz_concluido":
+                    self.cadastro_voz_ativo = False
+                    self.falar.configure(state="normal" if self.pronto else "disabled")
+                    self.botao_perfil.configure(state="normal")
+                    self.perfil_estado.configure(text=dados[0], fg=COR_AUDIO if dados[1] else COR_ERRO)
+                    if (self.microfone_antes_cadastro and self.pronto and self.modo == "voz"
+                            and not self.microfone_mutado):
+                        self.motor.ativar_microfone()
+                        self._mostrar_microfone(True)
                 elif tipo == "modo":
                     self.selecionar_modo(dados[0])
                 elif tipo == "confirmar":
                     self.titulo_confirmacao.configure(text=dados[0])
                     self.detalhes_confirmacao.configure(text=dados[1])
                     self.confirmacao.grid()
+                elif tipo == "confirmar_pesquisa":
+                    aceita = False
+                    try:
+                        aceita = messagebox.askyesno(
+                            dados[0], "Consultas propostas:\n\n" + dados[1] +
+                            "\n\nAutorizar somente esta pesquisa?",
+                            parent=self.raiz, default=messagebox.NO,
+                        )
+                    finally:
+                        self.motor.responder_confirmacao(aceita)
                 elif tipo == "limpar_confirmacao":
                     self.confirmacao.grid_remove()
                 elif tipo == "fatal":
@@ -1234,6 +1382,7 @@ class JanelaAssistente:
             return
         self._fechada = True
         self.cancelar_atualizacao.set()
+        self.cadastro_voz_cancelar.set()
         for identificador in self._agendamentos:
             try:
                 self.raiz.after_cancel(identificador)

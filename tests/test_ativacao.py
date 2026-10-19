@@ -52,11 +52,13 @@ class AtivacaoTests(unittest.TestCase):
         self.assertEqual(ativacao.preparar_pedido_falado("Aurora boreal", "Aurora"), "Aurora boreal")
         self.assertEqual(ativacao.preparar_pedido_falado("Auroral é uma palavra", "Aurora"), "Auroral é uma palavra")
 
-    def test_monitor_ignora_eco_e_conversa_sem_nome(self):
+    def test_monitor_ignora_eco_e_aceita_fala_sem_nome(self):
         monitor = ativacao.MonitorInterrupcao("Você pode dizer Aurora, pare para interromper.")
-        for texto in ("Bom dia", "Aurora, pare"):
-            monitor.processar(texto)
+        monitor.processar("Aurora, pare para interromper")
         self.assertFalse(monitor.interrompido.is_set())
+        monitor.processar("Bom dia")
+        self.assertTrue(monitor.interrompido.is_set())
+        self.assertEqual(monitor.comando, "Bom dia")
 
     def test_monitor_para_e_pode_guardar_novo_pedido(self):
         monitor = ativacao.MonitorInterrupcao("Estou explicando programação.")
@@ -66,6 +68,79 @@ class AtivacaoTests(unittest.TestCase):
         monitor = ativacao.MonitorInterrupcao("Estou explicando programação.")
         monitor.processar("Aurora, agora explique matemática.")
         self.assertEqual(monitor.comando, "agora explique matemática.")
+
+    def test_inicio_de_fala_aguarda_confirmacao_e_guarda_pedido(self):
+        iniciou, liberar = threading.Event(), threading.Event()
+
+        def capturar(**opcoes):
+            opcoes["ao_iniciar_fala"]()
+            iniciou.set()
+            liberar.wait(2)
+            return np.ones(voz.AMOSTRAS_POR_BLOCO, dtype=np.float32)
+
+        with patch.object(voz, "capturar_audio", side_effect=capturar), \
+                patch.object(voz, "transcrever_audio", return_value="Explique este erro"), \
+                patch.object(ativacao, "tecla_durante_fala", return_value=None):
+            with ativacao.MonitorInterrupcao("Estou explicando.") as monitor:
+                try:
+                    self.assertTrue(iniciou.wait(2))
+                    monitor.verificar()
+                finally:
+                    liberar.set()
+            with self.assertRaises(InterromperFala):
+                monitor.verificar()
+        self.assertEqual(monitor.comando, "Explique este erro")
+
+    def test_ruido_sem_transcricao_nao_interrompe(self):
+        processou, voltou = threading.Event(), threading.Event()
+        chamadas = 0
+
+        def capturar(**opcoes):
+            nonlocal chamadas
+            chamadas += 1
+            if chamadas == 1:
+                opcoes["ao_iniciar_fala"]()
+                return np.ones(voz.AMOSTRAS_POR_BLOCO, dtype=np.float32)
+            voltou.set()
+            opcoes["cancelar"].wait(2)
+            return None
+
+        def transcrever(_audio):
+            processou.set()
+            return ""
+
+        with patch.object(voz, "capturar_audio", side_effect=capturar), \
+                patch.object(voz, "transcrever_audio", side_effect=transcrever), \
+                patch.object(ativacao, "tecla_durante_fala", return_value=None):
+            with ativacao.MonitorInterrupcao("Resposta falada") as monitor:
+                self.assertTrue(processou.wait(2))
+                self.assertTrue(voltou.wait(2))
+                monitor.verificar()
+        self.assertFalse(monitor.interrompido.is_set())
+
+    def test_voz_diferente_do_perfil_nao_interrompe_nem_transcreve(self):
+        processou, voltou = threading.Event(), threading.Event()
+        chamadas = 0
+
+        def capturar(**opcoes):
+            nonlocal chamadas
+            chamadas += 1
+            if chamadas == 1:
+                opcoes["ao_iniciar_fala"]()
+                return np.ones(voz.AMOSTRAS_POR_BLOCO, dtype=np.float32)
+            voltou.set()
+            opcoes["cancelar"].wait(2)
+            return None
+
+        with patch.object(voz, "capturar_audio", side_effect=capturar), \
+                patch("app.perfil_voz.corresponde", side_effect=lambda _audio: processou.set() or False), \
+                patch.object(voz, "transcrever_audio") as transcrever:
+            with ativacao.MonitorInterrupcao("Resposta falada") as monitor:
+                self.assertTrue(processou.wait(2))
+                self.assertTrue(voltou.wait(2))
+                monitor.verificar()
+        self.assertFalse(monitor.interrompido.is_set())
+        transcrever.assert_not_called()
 
     def test_monitor_e_encerrado_e_libera_microfone(self):
         terminou = threading.Event()

@@ -47,6 +47,7 @@ multidict==7.1.0
 mypy_extensions==1.1.0
 mypy==2.4.0
 numpy==2.5.4
+kaldi-native-fbank==1.22.3
 ollama==0.6.3
 onnxruntime==1.31.0
 packaging==26.3

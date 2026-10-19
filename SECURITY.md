@@ -13,6 +13,8 @@ externas são dados não confiáveis. Ações locais exigem confirmação antes 
 serem executadas. Essas medidas reduzem riscos, mas não eliminam erros de
 classificação ou de modelos generativos.
 
+O aplicativo não oferece captura de tela ou acompanhamento visual de janelas.
+
 As chaves de API ficam no cofre do sistema. Builds locais podem continuar sem
 assinatura. Uma release por tag agora exige certificado Authenticode, carimbo de
 tempo e validação da assinatura no CI; sem certificado configurado, o pipeline

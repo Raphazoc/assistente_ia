@@ -73,5 +73,5 @@ def aplicar(dados):
     main.IDIOMA = validos["idioma"]
     voz.IDIOMA_RECONHECIMENTO = "en" if validos["idioma"] == "en-US" else "pt"
     voz.MICROFONE_SELECIONADO = validos["microfone"]
-    fala.VOZ_ONLINE = "en-US-GuyNeural" if validos["idioma"] == "en-US" else "pt-BR-AntonioNeural"
+    fala.VOZ_ONLINE = fala.VOZ_MULTILINGUE
     return validos

@@ -91,6 +91,9 @@ jobs:
           path: dist-installer
       - name: Instalar, abrir e desinstalar
         shell: pwsh
+        env:
+          ASSISTENTE_SIGNING_REQUIRED: ${{ startsWith(github.ref, 'refs/tags/v') && '1' || '0' }}
+          ASSISTENTE_CERT_THUMBPRINT: ${{ secrets.ASSISTENTE_CERT_THUMBPRINT }}
         run: .\installer\test_install.ps1 -Instalador .\dist-installer\AssistenteIA-Setup.exe
 
   preparar_release:

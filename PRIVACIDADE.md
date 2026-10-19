@@ -21,6 +21,11 @@ opcionais podem enviar dados a serviços externos:
   conversa, o banco nem chaves.
 - **Modelos:** o reconhecimento por Faster-Whisper pode baixar modelos na
   primeira utilização. Baixar modelos Ollama também requer internet.
+- **Perfil de voz opcional:** ao escolher **Registrar minha voz**, o aplicativo
+  baixa um modelo público de verificação e processa duas gravações localmente.
+  O áudio bruto é descartado; apenas um vetor numérico de locutor fica em
+  `%LOCALAPPDATA%\AssistenteIA\perfil_voz.json`. Esse perfil pode ser apagado
+  na aba Voz e é removido em cada instalação e na desinstalação.
 
 Chaves de API ficam no cofre de credenciais do Windows. Os logs rotativos
 registram códigos de evento, tempos, contagens e tipos de erro, sem texto de
@@ -38,3 +43,5 @@ Feche o aplicativo antes de excluir manualmente arquivos da pasta de dados.
 
 O projeto não inclui telemetria própria. Serviços externos podem ter políticas
 de retenção diferentes; consulte os termos do provedor que escolher.
+
+O aplicativo não captura a tela nem janelas de outros programas.

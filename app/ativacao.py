@@ -73,7 +73,9 @@ class MonitorInterrupcao:
         self.texto_falado = normalizar(texto_falado)
         self.habilitado = habilitado
         self.finalizar = threading.Event()
+        self.concluir_fala = threading.Event()
         self.interrompido = threading.Event()
+        self.voz_detectada = threading.Event()
         self.comando = ""
         self.thread = None
 
@@ -86,25 +88,48 @@ class MonitorInterrupcao:
 
     def __exit__(self, *args):
         """Solicita o encerramento da escuta e aguarda sua finalização breve."""
-        self.finalizar.set()
         if self.thread:
+            # Depois de interromper a fala da IA, deixe a frase humana terminar.
+            if self.voz_detectada.is_set():
+                self.thread.join(timeout=12)
+            self.finalizar.set()
             self.thread.join(timeout=0.2)
+        else:
+            self.finalizar.set()
+
+    def _inicio_da_voz(self):
+        """Marca fala possível; ruído não deve cortar a resposta sozinho."""
+        self.voz_detectada.set()
 
     def _escutar(self):
         from .voz import capturar_audio, transcrever_audio
+        from . import perfil_voz
 
         try:
             while not self.finalizar.is_set():
-                audio = capturar_audio(cancelar=self.finalizar, teclado=False, anunciar=False, limite_fala=2.5)
+                audio = capturar_audio(cancelar=self.finalizar, teclado=False, anunciar=False,
+                                       limite_fala=8, ao_iniciar_fala=self._inicio_da_voz,
+                                       finalizar_fala=self.concluir_fala)
                 if self.finalizar.is_set():
                     return
                 if audio is None or not audio.size:
+                    self.voz_detectada.clear()
+                    if self.concluir_fala.is_set():
+                        return
                     continue
-                texto = transcrever_audio(audio, modo_interrupcao=True)
+                if not perfil_voz.corresponde(audio):
+                    self.voz_detectada.clear()
+                    if self.concluir_fala.is_set():
+                        return
+                    continue
+                texto = transcrever_audio(audio)
                 if self.finalizar.is_set():
                     return
                 self.processar(texto)
                 if self.interrompido.is_set():
+                    return
+                self.voz_detectada.clear()
+                if self.concluir_fala.is_set():
                     return
         except Exception as erro:
             if not self.finalizar.is_set():
@@ -116,9 +141,9 @@ class MonitorInterrupcao:
         frase = normalizar(texto)
         if not frase or frase in self.texto_falado:
             return  # Não reage a uma transcrição que repete a própria resposta.
-        comando = extrair_chamada(texto, carregar_configuracao()["palavra_ativacao"])
+        comando = extrair_chamada(texto, carregar_configuracao()["palavra_ativacao"], exigir_separador=True)
         if comando is None:
-            return
+            comando = texto.strip()
         self.comando = "" if normalizar(comando) in {"pare", "parar", "cancele", "chega", "silencio"} else comando
         self.interrompido.set()
 

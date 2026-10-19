@@ -9,3 +9,4 @@ keyring==25.7.0
 Pygments==2.21.0
 customtkinter==5.2.2
 Pillow==12.3.0
+kaldi-native-fbank==1.22.3

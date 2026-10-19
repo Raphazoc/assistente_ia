@@ -1,9 +1,13 @@
 # Voz da assistente
 
-A voz principal é a `pt-BR-AntonioNeural`, usando o serviço online de voz
+A voz principal é a `en-US-BrianMultilingualNeural`, usando o serviço online de voz
 da Microsoft por meio do [edge-tts](https://github.com/rany2/edge-tts).
 O texto a ser falado é enviado ao serviço; o reconhecimento de voz e o
 modelo de conversa continuam usando a configuração do projeto.
+A voz é multilíngue: mantém o português da conversa e pode pronunciar nomes,
+termos e frases em inglês no idioma original sem dividir a fala em várias vozes.
+O prefixo `en-US` é a localidade principal da voz, não uma tradução da resposta.
+A alternativa Piper local continua usando o modelo em português.
 
 Para ouvir uma demonstração no dispositivo de áudio padrão do Windows:
 
@@ -88,29 +92,46 @@ funcionam sem nome. Se preferir, **"Aurora, explique Python"** continua
 funcionando. O nome sozinho não envia um pedido. Sem a exigência do nome,
 outras falas próximas ao microfone também podem ser capturadas.
 
-O nome é usado para interromper uma resposta enquanto a IA está falando.
-Altere-o pelo menu **Esc → 3**. A escolha fica salva em `resources/config_voz.json`
-e permanece após reiniciar. Você pode escolher de uma a quatro palavras,
-com até 40 letras. Prefira um nome distinto de palavras comuns no ambiente.
+O nome de ativação é opcional também durante a resposta. Altere-o pelo menu
+**Esc → 3**. A escolha fica salva em `resources/config_voz.json` e permanece
+após reiniciar. Você pode escolher de uma a quatro palavras, com até 40 letras.
 
 Durante a resposta falada:
 
 - **Espaço** interrompe o áudio.
 - **Esc** interrompe e abre o menu de modos.
-- **"Aurora, pare"** interrompe pelo microfone.
-- **"Aurora, agora explique outro assunto"** interrompe e envia o novo pedido.
+- Uma frase reconhecível interrompe a reprodução após a transcrição local.
+- **"Pare"** interrompe pelo microfone; **"agora explique outro assunto"**
+  interrompe e envia o novo pedido. O nome de ativação continua opcional.
 
 A interrupção pelo teclado também funciona enquanto o serviço online gera
-o áudio. A interrupção por voz precisa detectar e transcrever a chamada,
-por isso leva mais tempo. Ela usa o reconhecimento local, com janelas de
-até 2,5 segundos durante a reprodução.
+o áudio. A interrupção por voz aguarda a transcrição local antes de cortar a
+resposta; isso evita que qualquer ruído detectado como fala a interrompa.
+A captura aceita até oito segundos de fala durante a interrupção. O
+reconhecimento prioriza português, mas a resposta pode preservar termos e
+frases em inglês quando uma tradução literal não fizer sentido.
 
 O microfone aplica filtro de frequências, limiar adaptativo de ruído,
 confirmação de fala em blocos consecutivos e rejeição de transcrições de
 baixa confiança. O monitor também ignora trechos que repetem a própria
 resposta. Esses cuidados reduzem ativações falsas; não garantem eliminá-las.
+Ao tocar **Mutar microfone**, a frase já iniciada é concluída e transcrita
+antes de desligar a escuta. Trocar de modo ou fechar o aplicativo cancela a
+captura em andamento.
 O filtro não é um cancelador acústico de eco: **use fones** para melhorar a
 interrupção por voz quando as caixas de som chegam ao microfone.
+O programa detecta fala, mas não identifica quem falou: outras pessoas próximas
+também podem interromper a resposta **enquanto não houver perfil cadastrado**.
+Na aba Voz, use **Registrar minha voz** para gravar duas frases longas. O aplicativo
+baixa um [modelo WeSpeaker local](https://huggingface.co/Wespeaker/wespeaker-voxceleb-resnet34)
+de aproximadamente 26 MB com SHA-256 verificado, calcula os vetores de locutor
+e descarta o áudio bruto. Depois disso, só uma fala cuja voz corresponda ao
+perfil poderá interromper a resposta. Frases com menos de 1,2 segundo podem ser
+rejeitadas; diga, por exemplo, "Aurora, pare por favor". É uma verificação
+probabilística: outra voz muito parecida ou áudio reproduzido pode passar, e
+ruído intenso pode causar rejeição. **Apagar perfil de voz** remove os vetores
+salvos. O perfil também é apagado ao instalar ou atualizar pelo Setup, junto
+com a memória, conforme a política atual do projeto.
 Em `resources/config_voz.json`, `interromper_por_voz: false` desativa a escuta durante
 a reprodução; Espaço e Esc continuam disponíveis.
 

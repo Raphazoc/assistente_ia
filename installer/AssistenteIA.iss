@@ -1,7 +1,7 @@
 [Setup]
 AppId={{6C479E2C-7C41-48B9-84B3-F26814F15727}
 AppName=Assistente IA
-AppVersion=0.5.3
+AppVersion=0.5.6
 SetupIconFile=..\resources\assistente_ia.ico
 DefaultDirName={localappdata}\Programs\AssistenteIA
 DefaultGroupName=Assistente IA
@@ -31,7 +31,12 @@ Type: files; Name: "{localappdata}\AssistenteIA\memoria.db-wal"
 Type: files; Name: "{localappdata}\AssistenteIA\memoria.db-shm"
 Type: files; Name: "{localappdata}\AssistenteIA\memoria.db-journal"
 Type: files; Name: "{localappdata}\AssistenteIA\memoria_antes_v2_*.db"
+Type: files; Name: "{localappdata}\AssistenteIA\perfil_voz.json"
 Type: filesandordirs; Name: "{localappdata}\AssistenteIA\backups"
+
+[UninstallDelete]
+Type: files; Name: "{localappdata}\AssistenteIA\perfil_voz.json"
+Type: files; Name: "{localappdata}\AssistenteIA\modelos\voxceleb_resnet34.onnx"
 
 [Icons]
 Name: "{group}\Assistente IA"; Filename: "{app}\AssistenteIA.exe"; IconFilename: "{app}\AssistenteIA.exe"

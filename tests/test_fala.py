@@ -151,6 +151,20 @@ class FalaTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "Sem rede"):
                 fala.gerar_audio_online("Olá.")
 
+    def test_frase_mista_preserva_termos_e_usa_voz_multilingue(self):
+        texto = "Use Python para estudar machine learning com exemplos em português."
+
+        async def transmitir():
+            yield {"type": "audio", "data": b"mp3"}
+
+        with patch("edge_tts.Communicate") as comunicar, \
+                patch.object(fala, "VOZ_ONLINE", fala.VOZ_MULTILINGUE), \
+                patch.object(fala, "decodificar_mp3", return_value=b"pcm"):
+            comunicar.return_value.stream.side_effect = transmitir
+            self.assertEqual(fala.gerar_audio_online(texto), b"pcm")
+        self.assertEqual(comunicar.call_args.args, (texto,))
+        self.assertEqual(comunicar.call_args.kwargs["voice"], fala.VOZ_MULTILINGUE)
+
     def test_sem_texto_nao_acessa_rede_ou_dispositivo(self):
         with patch.object(fala, "falar_online") as online:
             fala.falar("😊 ** **")

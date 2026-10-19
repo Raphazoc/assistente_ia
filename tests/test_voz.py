@@ -108,10 +108,32 @@ class CapturaVozTests(unittest.TestCase):
             detector.return_value.probabilidade.side_effect = [0.9] * 5 + [0.0] * silencios
             microfone = stream.return_value.__enter__.return_value
             microfone.read.return_value = (bloco, False)
-            audio = voz.capturar_audio()
+            iniciou = []
+            audio = voz.capturar_audio(ao_iniciar_fala=lambda: iniciou.append(microfone.read.call_count))
         self.assertEqual(microfone.read.call_count, 5 + silencios)
         self.assertGreater(audio.size, 0)
+        self.assertEqual(len(iniciou), 1)
+        self.assertLess(iniciou[0], microfone.read.call_count)
         stream.return_value.__exit__.assert_called_once()
+
+    def test_mutar_conclui_a_frase_ja_iniciada_sem_esperar_silencio(self):
+        amostras = np.arange(voz.AMOSTRAS_POR_BLOCO) / voz.TAXA_AMOSTRAGEM
+        bloco = (0.1 * np.sin(2 * np.pi * 200 * amostras)).astype(np.float32).reshape(-1, 1)
+        concluir = threading.Event()
+        with (patch.object(voz, "DetectorVoz") as detector,
+              patch.object(voz.sd, "InputStream") as stream):
+            detector.return_value.probabilidade.return_value = 0.9
+            microfone = stream.return_value.__enter__.return_value
+
+            def ler(_quantidade):
+                if microfone.read.call_count >= 12:
+                    concluir.set()
+                return bloco, False
+
+            microfone.read.side_effect = ler
+            audio = voz.capturar_audio(teclado=False, anunciar=False, finalizar_fala=concluir)
+        self.assertGreater(audio.size, 0)
+        self.assertEqual(microfone.read.call_count, 12)
 
     def test_microfone_escolhido_e_usado_na_captura(self):
         dispositivos = [

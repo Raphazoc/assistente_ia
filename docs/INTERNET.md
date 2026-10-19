@@ -36,7 +36,9 @@ autorização e respeitando os filtros.
 No aplicativo Windows, use **Pesquisa: ligada/desligada** no topo da janela.
 A escolha é salva nas configurações do aplicativo e vale nas próximas aberturas.
 Desligar a pesquisa impede o acesso ao buscador; ligar novamente mantém a
-autorização individual antes de cada busca.
+autorização individual antes de cada busca. Quando a assistente propõe uma
+pesquisa, surge uma janela de confirmação com o motivo, o provedor e as
+consultas exatas. Fechar a janela ou escolher **Não** recusa aquela pesquisa.
 
 Em **Configurações → Pesquisa**, escolha DuckDuckGo (padrão) ou Brave Search. Para usar Brave,
 cole sua chave da API no campo **Nova chave Brave** e salve. O campo vazio mantém
@@ -121,3 +123,21 @@ importação automática das páginas como fatos pessoais do usuário.
 A voz online existente também usa a internet para sintetizar as respostas,
 conforme [VOZ.md](VOZ.md). A confirmação descrita aqui controla as pesquisas;
 a configuração da síntese de voz continua em `app/fala.py`.
+
+## Avaliação da pesquisa Google
+
+A [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview)
+do Google está fechada para novos clientes e será descontinuada para clientes
+existentes em 1º de janeiro de 2027. Ela exigiria uma chave de API e um
+identificador de Programmable Search Engine. Por isso, ela não é uma boa opção
+para o buscador padrão deste aplicativo.
+
+O [Grounding with Google Search da Gemini API](https://ai.google.dev/gemini-api/docs/google-search)
+é uma alternativa atual para pesquisa na Web, mas tem outro contrato: envia o
+pedido ao Gemini, que pode formular consultas adicionais e produzir resposta e
+citações. Uma integração futura precisaria de chave própria no cofre do sistema,
+consentimento claro sobre o envio do pedido, limites de uso, tratamento de
+falhas e custos, adaptação das fontes e testes dos filtros atuais de conteúdo
++18. O pop-up teria de explicar que as consultas geradas pelo Gemini não são
+necessariamente as consultas exatas previamente exibidas. Até lá, DuckDuckGo
+continua como padrão e Brave permanece opcional.

@@ -7,6 +7,7 @@ import tkinter as tk
 import unittest
 from unittest.mock import Mock, patch
 from pathlib import Path
+import numpy as np
 
 from app import aplicativo
 from app import configuracao, internet, servicos, voz
@@ -14,6 +15,61 @@ from app.controles import InterromperFala
 
 
 class AplicativoTests(unittest.TestCase):
+    def test_mutar_durante_interrupcao_preserva_pedido_ja_falado(self):
+        motor = aplicativo.MotorDesktop(queue.Queue())
+        iniciou = threading.Event()
+
+        def capturar(**opcoes):
+            opcoes["ao_iniciar_fala"]()
+            iniciou.set()
+            self.assertTrue(opcoes["finalizar_fala"].wait(3))
+            return np.ones(32000, dtype=np.float32)
+
+        with patch.object(voz, "capturar_audio", side_effect=capturar), \
+                patch.object(voz, "transcrever_audio", return_value="Explique novamente"), \
+                patch.object(aplicativo.perfil_voz, "corresponde", return_value=True):
+            with aplicativo.ativacao.MonitorInterrupcao("Resposta em andamento") as monitor:
+                motor.monitor_ativo = monitor
+                motor.microfone_ativo.set()
+                self.assertTrue(iniciou.wait(3))
+                motor.desativar_microfone(concluir_frase=True)
+                self.assertFalse(monitor.finalizar.is_set())
+        self.assertFalse(motor.microfone_ativo.is_set())
+        self.assertEqual(monitor.comando, "Explique novamente")
+
+    def test_cadastro_voz_libera_controles_apos_sucesso_ou_falha(self):
+        for falha in (None, ValueError("Amostras diferentes")):
+            with self.subTest(falha=falha):
+                try:
+                    raiz = tk.Tk()
+                except tk.TclError:
+                    self.skipTest("Ambiente sem interface gráfica")
+                raiz.withdraw()
+                janela = aplicativo.JanelaAssistente(raiz, iniciar_motor=False)
+                janela.pronto = True
+                try:
+                    with patch.object(aplicativo.messagebox, "askyesno", return_value=True), \
+                            patch.object(aplicativo.perfil_voz, "preparar_modelo"), \
+                            patch.object(aplicativo.perfil_voz, "cadastrar", side_effect=falha) as cadastrar, \
+                            patch.object(voz, "capturar_audio", return_value=np.ones(32000, dtype=np.float32)):
+                        janela.registrar_voz()
+                        recebidos = []
+                        while True:
+                            evento = janela.eventos.get(timeout=5)
+                            recebidos.append(evento)
+                            if evento[0] == "perfil_voz_concluido":
+                                self.assertEqual(evento[2], falha is None)
+                                break
+                        for evento in recebidos:
+                            janela.eventos.put(evento)
+                        janela._processar_eventos()
+                        self.assertFalse(janela.cadastro_voz_ativo)
+                        self.assertEqual(janela.botao_perfil.cget("state"), "normal")
+                        self.assertEqual(janela.falar.cget("state"), "normal")
+                        cadastrar.assert_called_once()
+                finally:
+                    janela.fechar()
+
     def test_fechar_durante_resposta_fecha_banco_na_thread_e_descarta_resposta(self):
         iniciou, liberar = threading.Event(), threading.Event()
         eventos = queue.Queue()
@@ -32,11 +88,13 @@ class AplicativoTests(unittest.TestCase):
                 return "resposta tardia"
             responder.side_effect = demorar
             motor.iniciar()
-            motor.enviar_texto("pergunta")
-            self.assertTrue(iniciou.wait(3))
-            motor.fechar()
-            liberar.set()
-            motor.thread.join(3)
+            try:
+                motor.enviar_texto("pergunta")
+                self.assertTrue(iniciou.wait(10))
+            finally:
+                motor.fechar()
+                liberar.set()
+                motor.thread.join(10)
             self.assertFalse(motor.thread.is_alive())
             with contextlib.closing(sqlite3.connect(Path(pasta) / "memoria.db")) as conexao:
                 self.assertEqual(conexao.execute("SELECT papel FROM mensagens").fetchall(), [("user",)])
@@ -168,6 +226,17 @@ class AplicativoTests(unittest.TestCase):
         raiz.withdraw()
         janela = aplicativo.JanelaAssistente(raiz, iniciar_motor=False)
         try:
+            def textos(widget):
+                resultado = []
+                try:
+                    resultado.append(str(widget.cget("text")))
+                except (tk.TclError, ValueError):
+                    pass
+                for filho in widget.winfo_children():
+                    resultado.extend(textos(filho))
+                return resultado
+
+            self.assertFalse(any("Acompanhar estudos" in texto for texto in textos(raiz)))
             self.assertIs(janela.area_escrita.master, raiz)
             self.assertIs(janela.area_audio.master, raiz)
             self.assertEqual(janela.area_escrita.grid_info()["column"], 0)
@@ -195,6 +264,34 @@ class AplicativoTests(unittest.TestCase):
         tarefa.join(timeout=1)
         self.assertEqual(resultado, [False])
 
+    def test_pesquisa_exige_popup_com_consultas_e_nao_autoriza_por_padrao(self):
+        try:
+            raiz = tk.Tk()
+        except tk.TclError:
+            self.skipTest("Ambiente sem interface gráfica")
+        raiz.withdraw()
+        janela = aplicativo.JanelaAssistente(raiz, iniciar_motor=False)
+        plano = Mock(consultas=("documentação oficial Python",), motivo="Confirmar versão")
+        resultados = []
+        with patch.object(aplicativo.servicos, "carregar", return_value={"buscador": "duckduckgo"}), \
+                patch.object(aplicativo.messagebox, "askyesno", return_value=False) as popup:
+            tarefa = threading.Thread(target=lambda: resultados.append(janela.motor._autorizar_pesquisa(plano)))
+            try:
+                tarefa.start()
+                evento = janela.eventos.get(timeout=2)
+                self.assertEqual(evento[0], "confirmar_pesquisa")
+                janela.eventos.put(evento)
+                janela._processar_eventos()
+                tarefa.join(2)
+                self.assertFalse(tarefa.is_alive())
+                self.assertEqual(resultados, [False])
+                self.assertIn("documentação oficial Python", popup.call_args.args[1])
+                self.assertEqual(popup.call_args.kwargs["default"], aplicativo.messagebox.NO)
+            finally:
+                janela.motor.responder_confirmacao(False)
+                tarefa.join(2)
+                janela.fechar()
+
     def test_troca_de_aba_controla_escuta(self):
         try:
             raiz = tk.Tk()
@@ -211,7 +308,7 @@ class AplicativoTests(unittest.TestCase):
                 ativar.assert_called_once_with()
                 janela.selecionar_modo("texto")
                 self.assertFalse(janela.microfone_ligado)
-                desativar.assert_called_once_with()
+            desativar.assert_called_once_with()
         finally:
             janela.fechar()
 
@@ -234,7 +331,7 @@ class AplicativoTests(unittest.TestCase):
                 self.assertFalse(janela.microfone_ligado)
                 self.assertIn("mutado", janela.estado_audio["text"])
                 ativar.assert_called_once_with()
-                desativar.assert_called_once_with()
+                desativar.assert_called_once_with(concluir_frase=True)
                 janela.eventos.put(("estado_audio", "Ouvindo · fale no seu ritmo"))
                 janela._processar_eventos()
                 self.assertIn("mutado", janela.estado_audio["text"])

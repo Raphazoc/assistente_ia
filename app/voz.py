@@ -318,7 +318,8 @@ def atalho_menu_pressionado():
 
 
 def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
-                   aguardar_fala=False, ao_nivel=None):
+                   aguardar_fala=False, ao_nivel=None, ao_iniciar_fala=None,
+                   finalizar_fala=None):
     """Retorna None para abrir o menu, ou um vetor de áudio da frase."""
     if teclado and atalho_menu_pressionado():
         return None
@@ -339,6 +340,8 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
         while True:
             if (cancelar is not None and cancelar.is_set()) or (teclado and atalho_menu_pressionado()):
                 return None
+            if finalizar_fala is not None and finalizar_fala.is_set():
+                return gravador.audio() if gravador.iniciou else np.empty(0, dtype=np.float32)
             bloco, perdeu_amostras = microfone.read(AMOSTRAS_POR_BLOCO)
             if perdeu_amostras:
                 raise RuntimeError("A captura perdeu áudio. Tente falar novamente.")
@@ -347,15 +350,20 @@ def capturar_audio(cancelar=None, teclado=True, anunciar=True, limite_fala=None,
             blocos_lidos += 1
             if ao_nivel is not None and blocos_lidos % 4 == 0:
                 ao_nivel(min(1.0, float(np.sqrt(np.mean(bloco * bloco))) * 35))
-            if gravador.processar(bloco, probabilidade):
+            iniciou_antes = gravador.iniciou
+            terminou = gravador.processar(bloco, probabilidade)
+            if not iniciou_antes and gravador.iniciou and ao_iniciar_fala is not None:
+                ao_iniciar_fala()
+            if terminou:
                 return gravador.audio()
 
 
-def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None, ao_nivel=None):
+def ouvir(cancelar=None, teclado=True, aguardar_fala=False, ao_capturar=None, ao_nivel=None,
+          finalizar_fala=None):
     """Captura e transcreve frases continuamente até receber cancelamento."""
     inicio = time.monotonic()
     audio = capturar_audio(cancelar=cancelar, teclado=teclado, aguardar_fala=aguardar_fala,
-                           ao_nivel=ao_nivel)
+                           ao_nivel=ao_nivel, finalizar_fala=finalizar_fala)
     if audio is None:
         if cancelar is not None and cancelar.is_set():
             return ""

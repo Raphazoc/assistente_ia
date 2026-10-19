@@ -39,6 +39,17 @@ try {
     if ($processo.ExitCode -ne 0) { throw "Instalação falhou (código $($processo.ExitCode))." }
     $instalado = $true
     $executavel = Join-Path $destino 'AssistenteIA.exe'
+    if ($env:ASSISTENTE_SIGNING_REQUIRED -eq '1') {
+        $esperado = $env:ASSISTENTE_CERT_THUMBPRINT -replace '\s', ''
+        if (-not $esperado) { throw 'Thumbprint obrigatório para validar o aplicativo instalado.' }
+        foreach ($alvo in @($arquivo, $executavel)) {
+            $assinatura = Get-AuthenticodeSignature -LiteralPath $alvo
+            if ($assinatura.Status -ne 'Valid' -or -not $assinatura.TimeStamperCertificate -or
+                $assinatura.SignerCertificate.Thumbprint -ine $esperado) {
+                throw "Assinatura Authenticode inválida ou certificado inesperado: $alvo"
+            }
+        }
+    }
     $recursos = Join-Path $destino '_internal\resources'
     foreach ($necessario in @(
         $executavel,
@@ -60,16 +71,18 @@ try {
     $diarioTeste = Join-Path $dadosUsuario 'memoria.db-wal'
     $backupsTeste = Join-Path $dadosUsuario 'backups'
     $configuracaoTeste = Join-Path $dadosUsuario 'config_geral.json'
+    $perfilTeste = Join-Path $dadosUsuario 'perfil_voz.json'
     Set-Content -LiteralPath $bancoTeste -Value 'memoria anterior' -Encoding utf8
     Set-Content -LiteralPath $diarioTeste -Value 'diario anterior' -Encoding utf8
     New-Item -ItemType Directory -Path $backupsTeste -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $backupsTeste 'copia.db') -Value 'backup anterior' -Encoding utf8
     Set-Content -LiteralPath $configuracaoTeste -Value 'configuracao preservada' -Encoding utf8
+    Set-Content -LiteralPath $perfilTeste -Value 'perfil anterior' -Encoding utf8
     $atualizacao = Start-Process -FilePath $arquivo -ArgumentList @(
         '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=`"$destino`""
     ) -Wait -PassThru -WindowStyle Hidden
     if ($atualizacao.ExitCode -ne 0) { throw "Reinstalação falhou (código $($atualizacao.ExitCode))." }
-    foreach ($antigo in @($bancoTeste, $diarioTeste, $backupsTeste)) {
+    foreach ($antigo in @($bancoTeste, $diarioTeste, $backupsTeste, $perfilTeste)) {
         if (Test-Path -LiteralPath $antigo) { throw "Memória antiga permaneceu após reinstalar: $antigo" }
     }
     if ((Get-Content -LiteralPath $configuracaoTeste -Raw).Trim() -ne 'configuracao preservada') {

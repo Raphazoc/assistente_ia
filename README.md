@@ -1,6 +1,6 @@
 # Assistente Pessoal Local com IA
 
-> **Status: Beta em testes.** Versão do aplicativo: `v0.5.3`. O projeto ainda
+> **Status: Beta em testes.** Versão do aplicativo: `v0.5.6`. O projeto ainda
 > está em validação e pode mudar antes de uma versão estável.
 
 Assistente pessoal em Python, desenvolvido para conversar em português
@@ -49,7 +49,7 @@ O assistente oferece:
 - Filtros para conteúdo adulto e fontes não públicas.
 - Voz online com alternativa local usando Piper.
 - Reconhecimento de fala com Faster-Whisper.
-- Interrupção da fala por teclado ou palavra de ativação.
+- Interrupção da fala por teclado ou ao detectar sua voz.
 - Backups automáticos e restauração validada do banco SQLite.
 - Logs técnicos rotativos sem registrar o conteúdo das conversas.
 - Testes automatizados para os principais componentes.
@@ -389,12 +389,12 @@ Durante a fala:
 
 - `Espaço` interrompe a reprodução.
 - `Esc` interrompe e abre o menu.
-- A palavra de ativação seguida de `pare` interrompe por voz.
-- A palavra de ativação seguida de um novo pedido interrompe a resposta e
-  encaminha o novo pedido.
+- Uma frase transcrita interrompe a reprodução; com perfil de voz cadastrado,
+  o locutor também é verificado localmente. `Pare` apenas para a resposta.
+- Um novo pedido falado interrompe a resposta e é encaminhado em seguida.
 
-A palavra de ativação padrão é `Aurora`. Ela pode ser alterada pela opção `3`
-do menu. O valor é salvo em `resources/config_voz.json`.
+A palavra de ativação padrão é `Aurora`, mas seu uso é opcional. Ela pode ser
+alterada pela opção `3` do menu e fica salva em `resources/config_voz.json`.
 
 ### Comandos rápidos
 

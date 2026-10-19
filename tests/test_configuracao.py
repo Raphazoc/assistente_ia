@@ -89,6 +89,9 @@ class ConfiguracaoTests(unittest.TestCase):
             self.assertEqual((main.MODELO, main.MODELO_MEMORIA), ("outro:7b", "vetores:1b"))
             self.assertEqual(main.LIMITE_HISTORICO, 75)
             self.assertEqual((main.IDIOMA, voz.IDIOMA_RECONHECIMENTO), ("en-US", "en"))
+            self.assertEqual(fala.VOZ_ONLINE, fala.VOZ_MULTILINGUE)
+            configuracao.aplicar({**dados, "idioma": "pt-BR"})
+            self.assertEqual(fala.VOZ_ONLINE, fala.VOZ_MULTILINGUE)
 
     def test_microfone_escolhido_e_salvo_e_aplicado(self):
         with tempfile.TemporaryDirectory() as pasta, \
